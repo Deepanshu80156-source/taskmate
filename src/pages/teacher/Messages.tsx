@@ -1,37 +1,113 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { MessageCircle, Send, Search } from 'lucide-react';
+import { MessageCircle, Send, Search, ArrowLeft } from 'lucide-react';
+
+// ─── localStorage helpers for "last seen" message tracking ───
+const STORAGE_KEY = 'tm_last_seen';
+
+function getLastSeen(): Record<string, string> {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}'); } catch { return {}; }
+}
+
+function saveLastSeen(studentId: string, msgId: string) {
+  const all = getLastSeen();
+  all[studentId] = msgId;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+}
+
+function hasUnread(studentId: string, latestMsgId: string | undefined): boolean {
+  if (!latestMsgId) return false;
+  const seen = getLastSeen();
+  return seen[studentId] !== latestMsgId;
+}
+
+// ─── Avatar helper ───
+function Avatar({ name, photoUrl, size = 10, className = '' }: {
+  name: string; photoUrl?: string; size?: number; className?: string;
+}) {
+  const dim = `w-${size} h-${size}`;
+  if (photoUrl) {
+    return (
+      <div className={`${dim} rounded-full overflow-hidden shrink-0 ${className}`}>
+        <img src={photoUrl} alt={name} className="w-full h-full object-cover" />
+      </div>
+    );
+  }
+  return (
+    <div className={`${dim} rounded-full bg-secondary text-secondary-foreground flex items-center justify-center font-bold text-sm shrink-0 ${className}`}>
+      {name.charAt(0).toUpperCase()}
+    </div>
+  );
+}
 
 export default function TeacherMessages() {
   const { currentUser, getStudentsForTeacher, conversations, sendMessage } = useAuth();
-  
+
   const [searchQuery, setSearchQuery] = useState('');
   const [activeStudentId, setActiveStudentId] = useState<string | null>(null);
   const [newMessage, setNewMessage] = useState('');
+  const [, forceUpdate] = useState(0); // trigger re-render when localStorage changes
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const teacherStudents = currentUser ? getStudentsForTeacher(currentUser.id) : [];
 
-  const filteredStudents = teacherStudents.filter(s => 
+  // Sort students: those with most-recent messages first, then alphabetical
+  const sortedStudents = [...teacherStudents].sort((a, b) => {
+    const convA = conversations.find(c => c.studentId === a.id);
+    const convB = conversations.find(c => c.studentId === b.id);
+    const lastA = convA?.messages[convA.messages.length - 1];
+    const lastB = convB?.messages[convB.messages.length - 1];
+    if (lastA && lastB) {
+      // sort by timestamp string (HH:MM) — approximate; both are same-day for real-time
+      // use message index as tie-break since we don't have full date on Message
+      return convB.messages.length - convA.messages.length;
+    }
+    if (lastA) return -1;
+    if (lastB) return 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  const filteredStudents = sortedStudents.filter(s =>
     s.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const activeConversation = conversations.find(c => c.studentId === activeStudentId) || {
-    studentId: activeStudentId || '',
-    messages: []
+  const activeConversation = conversations.find(c => c.studentId === activeStudentId) ?? {
+    studentId: activeStudentId ?? '',
+    messages: [],
   };
 
   const activeStudent = teacherStudents.find(s => s.id === activeStudentId);
 
-  const scrollToBottom = () => {
+  const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  }, []);
 
   useEffect(() => {
-    if (activeStudentId) {
-      scrollToBottom();
+    if (activeStudentId) scrollToBottom();
+  }, [activeConversation.messages, activeStudentId, scrollToBottom]);
+
+  // Mark conversation as read when opened or when new messages arrive while open
+  useEffect(() => {
+    if (!activeStudentId) return;
+    const conv = conversations.find(c => c.studentId === activeStudentId);
+    const lastMsg = conv?.messages[conv.messages.length - 1];
+    if (lastMsg) {
+      saveLastSeen(activeStudentId, lastMsg.id);
+      forceUpdate(n => n + 1);
     }
-  }, [activeConversation.messages, activeStudentId]);
+  }, [activeStudentId, activeConversation.messages.length, conversations]);
+
+  const handleSelectStudent = (studentId: string) => {
+    setActiveStudentId(studentId);
+    setNewMessage('');
+    // Mark as read immediately on click
+    const conv = conversations.find(c => c.studentId === studentId);
+    const lastMsg = conv?.messages[conv.messages.length - 1];
+    if (lastMsg) {
+      saveLastSeen(studentId, lastMsg.id);
+      forceUpdate(n => n + 1);
+    }
+  };
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,9 +128,9 @@ export default function TeacherMessages() {
         </div>
       </header>
 
-      <div className="flex-1 glass-card rounded-2xl border border-border flex overflow-hidden shadow-sm">
-        
-        {/* Left Sidebar - Student List */}
+      <div className="flex-1 glass-card rounded-2xl border border-border flex overflow-hidden shadow-sm min-h-0">
+
+        {/* ── Left Sidebar: Student List ── */}
         <div className={`w-full md:w-80 border-r border-border flex flex-col bg-background/30 ${activeStudentId ? 'hidden md:flex' : 'flex'}`}>
           <div className="p-4 border-b border-border">
             <div className="relative">
@@ -63,37 +139,52 @@ export default function TeacherMessages() {
                 type="text"
                 placeholder="Search students..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={e => setSearchQuery(e.target.value)}
                 className="w-full bg-background border border-input rounded-xl pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               />
             </div>
           </div>
-          
+
           <div className="flex-1 overflow-y-auto">
             {filteredStudents.length === 0 ? (
               <div className="p-4 text-center text-muted-foreground text-sm">No students found.</div>
             ) : (
               filteredStudents.map(student => {
-                const hasConv = conversations.some(c => c.studentId === student.id && c.messages.length > 0);
+                const conv = conversations.find(c => c.studentId === student.id);
+                const latestMsg = conv?.messages[conv.messages.length - 1];
                 const isActive = activeStudentId === student.id;
-                
+                const unread = !isActive && hasUnread(student.id, latestMsg?.id);
+
                 return (
                   <div
                     key={student.id}
-                    onClick={() => setActiveStudentId(student.id)}
+                    onClick={() => handleSelectStudent(student.id)}
                     className={`p-4 border-b border-border/50 cursor-pointer transition-colors flex items-center gap-3 ${
-                      isActive ? 'bg-primary/10 border-l-4 border-l-primary' : 'hover:bg-secondary/50 border-l-4 border-l-transparent'
+                      isActive
+                        ? 'bg-primary/10 border-l-4 border-l-primary'
+                        : 'hover:bg-secondary/50 border-l-4 border-l-transparent'
                     }`}
                   >
-                    <div className="w-10 h-10 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center font-bold text-sm shrink-0">
-                      {student.name.charAt(0)}
+                    <div className="relative shrink-0">
+                      <Avatar name={student.name} photoUrl={student.photoUrl} size={10} />
+                      {unread && (
+                        <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-primary border-2 border-background" />
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-foreground truncate text-sm">{student.name}</p>
-                      <p className="text-xs text-muted-foreground truncate">{student.class}</p>
+                      <p className={`font-semibold text-foreground truncate text-sm ${unread ? 'text-foreground' : ''}`}>
+                        {student.name}
+                      </p>
+                      {latestMsg ? (
+                        <p className={`text-xs truncate ${unread ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>
+                          {latestMsg.senderId === currentUser?.id ? 'You: ' : ''}{latestMsg.text}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">{student.class}</p>
+                      )}
                     </div>
-                    {hasConv && !isActive && (
-                      <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                    {latestMsg && (
+                      <span className="text-[10px] text-muted-foreground shrink-0">{latestMsg.timestamp}</span>
                     )}
                   </div>
                 );
@@ -102,52 +193,56 @@ export default function TeacherMessages() {
           </div>
         </div>
 
-        {/* Right Area - Chat Area */}
-        <div className={`flex-1 flex flex-col bg-background/50 ${!activeStudentId ? 'hidden md:flex' : 'flex'}`}>
+        {/* ── Right: Chat Area ── */}
+        <div className={`flex-1 flex flex-col bg-background/50 min-w-0 ${!activeStudentId ? 'hidden md:flex' : 'flex'}`}>
           {!activeStudentId ? (
             <div className="flex-1 flex flex-col items-center justify-center p-6 text-center gap-3">
-              <span className="text-5xl">💬</span>
+              <MessageCircle className="w-14 h-14 text-muted-foreground/20" />
               <p className="text-lg font-semibold text-foreground">Select a Student</p>
               <p className="text-sm text-muted-foreground">Choose a student from the list to view or start a conversation.</p>
             </div>
           ) : (
             <>
               {/* Chat Header */}
-              <div className="p-4 border-b border-border flex items-center gap-3 bg-background">
-                <button 
-                  className="md:hidden p-2 -ml-2 rounded-lg hover:bg-secondary text-secondary-foreground"
+              <div className="p-4 border-b border-border flex items-center gap-3 bg-background shrink-0">
+                <button
+                  className="md:hidden p-2 -ml-1 rounded-lg hover:bg-secondary transition-colors"
                   onClick={() => setActiveStudentId(null)}
                 >
-                  ← Back
+                  <ArrowLeft className="w-4 h-4" />
                 </button>
-                <div className="w-10 h-10 rounded-full bg-secondary text-secondary-foreground flex items-center justify-center font-bold">
-                  {activeStudent?.name.charAt(0)}
-                </div>
+                <Avatar name={activeStudent?.name ?? ''} photoUrl={activeStudent?.photoUrl} size={10} />
                 <div>
                   <h3 className="font-semibold text-foreground">{activeStudent?.name}</h3>
-                  <p className="text-xs text-muted-foreground">{activeStudent?.class} • Roll: {activeStudent?.rollNumber}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {activeStudent?.class} · Roll: {activeStudent?.rollNumber}
+                  </p>
                 </div>
               </div>
 
-              {/* Messages Area */}
+              {/* Messages */}
               <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-muted/30">
                 {activeConversation.messages.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
-                    <p>No messages yet. Send a message to start the conversation with {activeStudent?.name}.</p>
+                  <div className="h-full flex flex-col items-center justify-center text-muted-foreground gap-2">
+                    <MessageCircle className="w-10 h-10 opacity-20" />
+                    <p className="text-sm">No messages yet. Say hi to {activeStudent?.name?.split(' ')[0]}!</p>
                   </div>
                 ) : (
-                  activeConversation.messages.map((msg) => {
+                  activeConversation.messages.map(msg => {
                     const isMine = msg.senderId === currentUser?.id;
                     return (
-                      <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                        <div 
-                          className={`max-w-[75%] rounded-2xl px-4 py-2 ${
-                            isMine 
-                              ? 'bg-primary text-primary-foreground rounded-br-sm' 
+                      <div key={msg.id} className={`flex items-end gap-2 ${isMine ? 'justify-end' : 'justify-start'}`}>
+                        {!isMine && (
+                          <Avatar name={activeStudent?.name ?? ''} photoUrl={activeStudent?.photoUrl} size={7} />
+                        )}
+                        <div
+                          className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${
+                            isMine
+                              ? 'bg-primary text-primary-foreground rounded-br-sm'
                               : 'bg-card border border-border text-card-foreground rounded-bl-sm shadow-sm'
                           }`}
                         >
-                          <p className="leading-relaxed">{msg.text}</p>
+                          <p className="leading-relaxed text-sm">{msg.text}</p>
                           <p className={`text-[10px] mt-1 text-right ${isMine ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
                             {msg.timestamp}
                           </p>
@@ -159,14 +254,14 @@ export default function TeacherMessages() {
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* Input Area */}
-              <div className="p-4 bg-background border-t border-border">
+              {/* Input */}
+              <div className="p-4 bg-background border-t border-border shrink-0">
                 <form onSubmit={handleSend} className="flex gap-2">
                   <input
                     type="text"
                     value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                    placeholder={`Message ${activeStudent?.name.split(' ')[0]}...`}
+                    onChange={e => setNewMessage(e.target.value)}
+                    placeholder={`Message ${activeStudent?.name?.split(' ')[0] ?? ''}…`}
                     className="flex-1 bg-muted/50 border border-input rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
                   />
                   <button

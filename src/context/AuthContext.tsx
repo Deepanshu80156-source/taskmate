@@ -10,6 +10,7 @@ import {
 
 interface AuthContextType {
   currentUser: User | null;
+  teacherProfile: User | null;
   loading: boolean;
   login: (username: string, password: string, role: Role) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
@@ -100,6 +101,7 @@ function rowToLib(row: Record<string, unknown>): LibraryNote {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [teacherProfile, setTeacherProfile] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [students, setStudents] = useState<User[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
@@ -148,12 +150,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [loadConversations]);
 
   const loadStudentData = useCallback(async (student: User) => {
-    const [nRes, rRes, aRes, notifRes] = await Promise.all([
+    const [nRes, rRes, aRes, notifRes, teacherRes] = await Promise.all([
       supabase.from('notes').select('*').eq('teacher_id', student.teacherId!).eq('class', student.class!).order('created_at', { ascending: false }),
       supabase.from('results').select('*').eq('student_id', student.id).order('created_at', { ascending: false }),
       supabase.from('announcements').select('*').eq('teacher_id', student.teacherId!).order('created_at', { ascending: false }),
       supabase.from('notifications').select('*').eq('student_id', student.id).order('created_at', { ascending: false }),
+      student.teacherId
+        ? supabase.from('profiles').select('*').eq('id', student.teacherId).single()
+        : Promise.resolve({ data: null }),
     ]);
+    if (teacherRes.data) setTeacherProfile(rowToUser(teacherRes.data as Record<string, unknown>));
     if (nRes.data) setNotes(nRes.data.map(rowToNote));
     if (rRes.data) setResults(rRes.data.map(rowToResult));
     if (aRes.data) setAnnouncements(
@@ -185,7 +191,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
       if (session?.user) { setLoading(true); handleSession(session); }
       else {
-        setCurrentUser(null); setStudents([]); setNotes([]); setResults([]);
+        setCurrentUser(null); setTeacherProfile(null); setStudents([]); setNotes([]); setResults([]);
         setAnnouncements([]); setConversations([]); setNotifications([]);
         setLibrary([]); setActivityLog([]); setLoading(false);
       }
@@ -269,6 +275,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.from('profiles').update({ photo_url: photoUrl }).eq('id', userId);
     setCurrentUser(prev => prev ? { ...prev, photoUrl } : prev);
     setStudents(prev => prev.map(s => s.id === userId ? { ...s, photoUrl } : s));
+    // If a teacher updates their photo, reflect it in students' teacherProfile view
+    setTeacherProfile(prev => prev?.id === userId ? { ...prev, photoUrl } : prev);
   };
 
   const addStudent = async (student: Omit<User, 'id' | 'role'> & { password: string }): Promise<{ success: boolean; error?: string }> => {
@@ -429,7 +437,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider value={{
-      currentUser, loading, login, logout, registerTeacher, changePassword, resetStudentPassword, updateUserPhoto,
+      currentUser, teacherProfile, loading, login, logout, registerTeacher, changePassword, resetStudentPassword, updateUserPhoto,
       students, addStudent, removeStudent, updateStudent,
       notes, addNote, getSignedNoteUrl,
       results, addResult,
