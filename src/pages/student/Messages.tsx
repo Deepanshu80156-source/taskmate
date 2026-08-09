@@ -1,29 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { MessageCircle, Send } from 'lucide-react';
-
-function Avatar({ name, photoUrl, size = 10, className = '' }: {
-  name: string; photoUrl?: string; size?: number; className?: string;
-}) {
-  const dim = `w-${size} h-${size}`;
-  if (photoUrl) {
-    return (
-      <div className={`${dim} rounded-full overflow-hidden shrink-0 ${className}`}>
-        <img src={photoUrl} alt={name} className="w-full h-full object-cover" />
-      </div>
-    );
-  }
-  return (
-    <div className={`${dim} rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm shrink-0 ${className}`}>
-      {name.charAt(0).toUpperCase()}
-    </div>
-  );
-}
+import TaskMateAvatar from '@/components/ui/TaskMateAvatar';
+import { MessageCircle, Send, RotateCcw } from 'lucide-react';
 
 export default function StudentMessages() {
   const { currentUser, conversations, sendMessage, teacherProfile } = useAuth();
 
   const [newMessage, setNewMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  const [pendingMessageId, setPendingMessageId] = useState<string | null>(null);
+  const [failedMessageId, setFailedMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const activeConv = conversations.find(c => c.studentId === currentUser?.id);
@@ -39,9 +25,20 @@ export default function StudentMessages() {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !currentUser) return;
-    await sendMessage(currentUser.id, currentUser.id, newMessage.trim());
-    setNewMessage('');
+    if (!newMessage.trim() || !currentUser || sending) return;
+    const messageText = newMessage.trim();
+    setSending(true);
+    setPendingMessageId(`local-${Date.now()}`);
+    setFailedMessageId(null);
+    try {
+      await sendMessage(currentUser.id, currentUser.id, messageText);
+      setNewMessage('');
+    } catch {
+      setFailedMessageId(`local-${Date.now()}`);
+    } finally {
+      setSending(false);
+      setPendingMessageId(null);
+    }
   };
 
   const teacherName = teacherProfile?.name ?? 'Teacher';
@@ -63,7 +60,7 @@ export default function StudentMessages() {
 
         {/* Chat Header */}
         <div className="p-4 border-b border-border bg-background/50 flex items-center gap-3 shrink-0">
-          <Avatar name={teacherName} photoUrl={teacherPhoto} size={10} />
+          <TaskMateAvatar name={teacherName} photoUrl={teacherPhoto} size={10} />
           <div>
             <h3 className="font-semibold text-foreground">{teacherName}</h3>
             <p className="text-xs text-muted-foreground">Your Teacher · Direct Message</p>
@@ -83,7 +80,7 @@ export default function StudentMessages() {
               return (
                 <div key={msg.id} className={`flex items-end gap-2 ${isMine ? 'justify-end' : 'justify-start'}`}>
                   {!isMine && (
-                    <Avatar name={teacherName} photoUrl={teacherPhoto} size={7} />
+                    <TaskMateAvatar name={teacherName} photoUrl={teacherPhoto} size={7} />
                   )}
                   <div
                     className={`max-w-[85%] md:max-w-[70%] rounded-2xl px-4 py-2.5 ${
@@ -93,9 +90,11 @@ export default function StudentMessages() {
                     }`}
                   >
                     <p className="leading-relaxed text-sm">{msg.text}</p>
-                    <p className={`text-[10px] mt-1 text-right ${isMine ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
-                      {msg.timestamp}
-                    </p>
+                    <div className={`flex items-center justify-end gap-2 text-[10px] mt-1 ${isMine ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
+                      <span>{msg.timestamp}</span>
+                      {isMine && msg.deliveryStatus === 'sending' && <span>Sending…</span>}
+                      {isMine && msg.deliveryStatus === 'failed' && <span className="text-rose-200">Failed</span>}
+                    </div>
                   </div>
                 </div>
               );
@@ -116,10 +115,10 @@ export default function StudentMessages() {
             />
             <button
               type="submit"
-              disabled={!newMessage.trim()}
+              disabled={!newMessage.trim() || sending}
               className="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              <Send className="w-4 h-4 ml-[-2px]" />
+              {sending ? <RotateCcw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4 ml-[-2px]" />}
             </button>
           </form>
         </div>

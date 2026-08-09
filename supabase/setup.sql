@@ -96,13 +96,22 @@ CREATE INDEX IF NOT EXISTS results_student_id_idx ON results(student_id);
 
 -- announcements
 CREATE TABLE IF NOT EXISTS announcements (
-  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  teacher_id  UUID        NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  title       TEXT        NOT NULL,
-  content     TEXT        NOT NULL,
-  class_scope TEXT        NOT NULL DEFAULT 'All Classes',
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+  id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  teacher_id          UUID        NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  title               TEXT        NOT NULL,
+  content             TEXT        NOT NULL,
+  class_scope         TEXT        NOT NULL DEFAULT 'All Classes',
+  attachment_path     TEXT,
+  attachment_name     TEXT,
+  attachment_mime_type TEXT,
+  attachment_size     BIGINT,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS attachment_path TEXT;
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS attachment_name TEXT;
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS attachment_mime_type TEXT;
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS attachment_size BIGINT;
 
 CREATE INDEX IF NOT EXISTS announcements_teacher_id_idx ON announcements(teacher_id);
 
@@ -193,64 +202,81 @@ ALTER TABLE messages      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 
 -- profiles
+DROP POLICY IF EXISTS "profiles: view own" ON profiles;
 CREATE POLICY "profiles: view own"
   ON profiles FOR SELECT USING (id = auth.uid());
 
+DROP POLICY IF EXISTS "profiles: teacher views students" ON profiles;
 CREATE POLICY "profiles: teacher views students"
   ON profiles FOR SELECT USING (role = 'student' AND teacher_id = auth.uid());
 
+DROP POLICY IF EXISTS "profiles: insert own" ON profiles;
 CREATE POLICY "profiles: insert own"
   ON profiles FOR INSERT WITH CHECK (id = auth.uid());
 
+DROP POLICY IF EXISTS "profiles: update own" ON profiles;
 CREATE POLICY "profiles: update own"
   ON profiles FOR UPDATE USING (id = auth.uid());
 
+DROP POLICY IF EXISTS "profiles: teacher updates students" ON profiles;
 CREATE POLICY "profiles: teacher updates students"
   ON profiles FOR UPDATE USING (role = 'student' AND teacher_id = auth.uid());
 
+DROP POLICY IF EXISTS "profiles: teacher deletes students" ON profiles;
 CREATE POLICY "profiles: teacher deletes students"
   ON profiles FOR DELETE USING (role = 'student' AND teacher_id = auth.uid());
 
 -- notes
+DROP POLICY IF EXISTS "notes: teacher full access" ON notes;
 CREATE POLICY "notes: teacher full access"
   ON notes FOR ALL USING (teacher_id = auth.uid());
 
+DROP POLICY IF EXISTS "notes: student reads class notes" ON notes;
 CREATE POLICY "notes: student reads class notes"
   ON notes FOR SELECT
   USING (teacher_id = get_my_teacher_id() AND class = get_my_class());
 
 -- results
+DROP POLICY IF EXISTS "results: teacher full access" ON results;
 CREATE POLICY "results: teacher full access"
   ON results FOR ALL USING (teacher_id = auth.uid());
 
+DROP POLICY IF EXISTS "results: student reads own results" ON results;
 CREATE POLICY "results: student reads own results"
   ON results FOR SELECT USING (student_id = auth.uid());
 
 -- announcements
+DROP POLICY IF EXISTS "announcements: teacher full access" ON announcements;
 CREATE POLICY "announcements: teacher full access"
   ON announcements FOR ALL USING (teacher_id = auth.uid());
 
+DROP POLICY IF EXISTS "announcements: student reads teacher announcements" ON announcements;
 CREATE POLICY "announcements: student reads teacher announcements"
   ON announcements FOR SELECT USING (teacher_id = get_my_teacher_id());
 
 -- library
+DROP POLICY IF EXISTS "library: teacher full access" ON library;
 CREATE POLICY "library: teacher full access"
   ON library FOR ALL USING (teacher_id = auth.uid());
 
 -- activity_log
+DROP POLICY IF EXISTS "activity_log: teacher full access" ON activity_log;
 CREATE POLICY "activity_log: teacher full access"
   ON activity_log FOR ALL USING (teacher_id = auth.uid());
 
 -- conversations
+DROP POLICY IF EXISTS "conversations: participants can view" ON conversations;
 CREATE POLICY "conversations: participants can view"
   ON conversations FOR SELECT
   USING (teacher_id = auth.uid() OR student_id = auth.uid());
 
+DROP POLICY IF EXISTS "conversations: participants can create" ON conversations;
 CREATE POLICY "conversations: participants can create"
   ON conversations FOR INSERT
   WITH CHECK (teacher_id = auth.uid() OR student_id = auth.uid());
 
 -- messages
+DROP POLICY IF EXISTS "messages: participants can view" ON messages;
 CREATE POLICY "messages: participants can view"
   ON messages FOR SELECT
   USING (
@@ -261,6 +287,7 @@ CREATE POLICY "messages: participants can view"
     )
   );
 
+DROP POLICY IF EXISTS "messages: participants can send" ON messages;
 CREATE POLICY "messages: participants can send"
   ON messages FOR INSERT
   WITH CHECK (
@@ -273,12 +300,15 @@ CREATE POLICY "messages: participants can send"
   );
 
 -- notifications
+DROP POLICY IF EXISTS "notifications: student views own" ON notifications;
 CREATE POLICY "notifications: student views own"
   ON notifications FOR SELECT USING (student_id = auth.uid());
 
+DROP POLICY IF EXISTS "notifications: student marks read" ON notifications;
 CREATE POLICY "notifications: student marks read"
   ON notifications FOR UPDATE USING (student_id = auth.uid());
 
+DROP POLICY IF EXISTS "notifications: teacher inserts for students" ON notifications;
 CREATE POLICY "notifications: teacher inserts for students"
   ON notifications FOR INSERT
   WITH CHECK (
@@ -295,39 +325,85 @@ CREATE POLICY "notifications: teacher inserts for students"
 
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES
-  ('notes',   'notes',   false, 52428800, ARRAY['application/pdf','image/png','image/jpeg','image/jpg']),
-  ('library', 'library', false, 52428800, ARRAY['application/pdf','image/png','image/jpeg','image/jpg'])
+  ('notes',         'notes',         false, 52428800, ARRAY['application/pdf','image/png','image/jpeg','image/jpg']),
+  ('library',       'library',       false, 52428800, ARRAY['application/pdf','image/png','image/jpeg','image/jpg']),
+  ('announcements', 'announcements', false, 10485760, ARRAY['application/pdf','image/png','image/jpeg','image/jpg','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document']),
+  ('avatars',       'avatars',       false, 2097152, ARRAY['image/png','image/jpeg','image/jpg'])
 ON CONFLICT (id) DO NOTHING;
 
 -- notes bucket
+DROP POLICY IF EXISTS "storage notes: teacher can upload" ON storage.objects;
 CREATE POLICY "storage notes: teacher can upload"
   ON storage.objects FOR INSERT
   WITH CHECK (bucket_id = 'notes' AND auth.uid()::text = (storage.foldername(name))[1]);
 
+DROP POLICY IF EXISTS "storage notes: teacher can read own" ON storage.objects;
 CREATE POLICY "storage notes: teacher can read own"
   ON storage.objects FOR SELECT
   USING (bucket_id = 'notes' AND auth.uid()::text = (storage.foldername(name))[1]);
 
+DROP POLICY IF EXISTS "storage notes: student reads teacher files" ON storage.objects;
 CREATE POLICY "storage notes: student reads teacher files"
   ON storage.objects FOR SELECT
   USING (bucket_id = 'notes' AND (storage.foldername(name))[1] = get_my_teacher_id()::text);
 
+DROP POLICY IF EXISTS "storage notes: teacher can delete" ON storage.objects;
 CREATE POLICY "storage notes: teacher can delete"
   ON storage.objects FOR DELETE
   USING (bucket_id = 'notes' AND auth.uid()::text = (storage.foldername(name))[1]);
 
 -- library bucket
+DROP POLICY IF EXISTS "storage library: teacher can upload" ON storage.objects;
 CREATE POLICY "storage library: teacher can upload"
   ON storage.objects FOR INSERT
   WITH CHECK (bucket_id = 'library' AND auth.uid()::text = (storage.foldername(name))[1]);
 
+DROP POLICY IF EXISTS "storage library: teacher can read own" ON storage.objects;
 CREATE POLICY "storage library: teacher can read own"
   ON storage.objects FOR SELECT
   USING (bucket_id = 'library' AND auth.uid()::text = (storage.foldername(name))[1]);
 
+DROP POLICY IF EXISTS "storage library: teacher can delete" ON storage.objects;
 CREATE POLICY "storage library: teacher can delete"
   ON storage.objects FOR DELETE
   USING (bucket_id = 'library' AND auth.uid()::text = (storage.foldername(name))[1]);
+
+-- announcements bucket
+DROP POLICY IF EXISTS "storage announcements: teacher can upload" ON storage.objects;
+CREATE POLICY "storage announcements: teacher can upload"
+  ON storage.objects FOR INSERT
+  WITH CHECK (bucket_id = 'announcements' AND auth.uid()::text = (storage.foldername(name))[1]);
+
+DROP POLICY IF EXISTS "storage announcements: teacher can read own" ON storage.objects;
+CREATE POLICY "storage announcements: teacher can read own"
+  ON storage.objects FOR SELECT
+  USING (bucket_id = 'announcements' AND auth.uid()::text = (storage.foldername(name))[1]);
+
+DROP POLICY IF EXISTS "storage announcements: student reads teacher files" ON storage.objects;
+CREATE POLICY "storage announcements: student reads teacher files"
+  ON storage.objects FOR SELECT
+  USING (bucket_id = 'announcements' AND (storage.foldername(name))[1] = get_my_teacher_id()::text);
+
+DROP POLICY IF EXISTS "storage announcements: teacher can delete" ON storage.objects;
+CREATE POLICY "storage announcements: teacher can delete"
+  ON storage.objects FOR DELETE
+  USING (bucket_id = 'announcements' AND auth.uid()::text = (storage.foldername(name))[1]);
+
+-- avatars bucket
+DROP POLICY IF EXISTS "storage avatars: user can upload own" ON storage.objects;
+CREATE POLICY "storage avatars: user can upload own"
+  ON storage.objects FOR INSERT
+  WITH CHECK (bucket_id = 'avatars' AND auth.uid()::text = (storage.foldername(name))[1]);
+
+DROP POLICY IF EXISTS "storage avatars: user can read own" ON storage.objects;
+CREATE POLICY "storage avatars: user can read own"
+  ON storage.objects FOR SELECT
+  USING (bucket_id = 'avatars' AND auth.uid()::text = (storage.foldername(name))[1]);
+
+DROP POLICY IF EXISTS "storage avatars: user can delete own" ON storage.objects;
+CREATE POLICY "storage avatars: user can delete own"
+  ON storage.objects FOR DELETE
+  USING (bucket_id = 'avatars' AND auth.uid()::text = (storage.foldername(name))[1]);
 
 
 -- ============================================================
@@ -396,5 +472,25 @@ CREATE TRIGGER auto_confirm_taskmate_users
 -- REALTIME
 -- ============================================================
 
-ALTER PUBLICATION supabase_realtime ADD TABLE messages;
-ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'messages'
+  ) THEN
+    NULL;
+  ELSE
+    ALTER PUBLICATION supabase_realtime ADD TABLE messages;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'notifications'
+  ) THEN
+    NULL;
+  ELSE
+    ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
+  END IF;
+END $$;

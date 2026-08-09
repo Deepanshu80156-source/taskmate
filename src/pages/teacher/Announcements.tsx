@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { Megaphone, Calendar, Send, CheckCircle, Trash2 } from 'lucide-react';
+import { Megaphone, Calendar, Send, CheckCircle, Trash2, Paperclip, XCircle, FileText } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { formatBytes } from '@/lib/fileUpload';
 
 export default function TeacherAnnouncements() {
   const { currentUser, announcements, addAnnouncement, removeAnnouncement } = useAuth();
@@ -11,6 +12,8 @@ export default function TeacherAnnouncements() {
   const [classScope, setClassScope] = useState('All Classes');
   const [isPosting, setIsPosting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const teacherAnnouncements = announcements.filter(a => a.teacherId === currentUser?.id);
 
@@ -19,18 +22,26 @@ export default function TeacherAnnouncements() {
     if (!newContent.trim() || !newTitle.trim() || !currentUser) return;
 
     setIsPosting(true);
-    await addAnnouncement({
-      title: newTitle,
-      content: newContent,
-      classScope,
-      teacherId: currentUser.id
-    });
-    setNewTitle('');
-    setNewContent('');
-    setClassScope('All Classes');
-    setIsPosting(false);
-    setSuccess(true);
-    setTimeout(() => setSuccess(false), 3000);
+    setError(null);
+    try {
+      await addAnnouncement({
+        title: newTitle,
+        content: newContent,
+        classScope,
+        teacherId: currentUser.id,
+        attachmentFile: selectedFile ?? undefined,
+      });
+      setNewTitle('');
+      setNewContent('');
+      setClassScope('All Classes');
+      setSelectedFile(null);
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not post the announcement.');
+    } finally {
+      setIsPosting(false);
+    }
   };
 
   return (
@@ -100,6 +111,26 @@ export default function TeacherAnnouncements() {
                />
             </div>
             
+            <div className="space-y-3">
+              <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+                <Paperclip className="w-4 h-4" />
+                <span>Attach one file (optional)</span>
+                <input type="file" className="hidden" onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)} />
+              </label>
+              {selectedFile && (
+                <div className="flex items-center justify-between rounded-xl border border-border bg-background/40 px-3 py-2 text-sm">
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-primary" />
+                    <span className="truncate">{selectedFile.name} · {formatBytes(selectedFile.size)}</span>
+                  </div>
+                  <button type="button" onClick={() => setSelectedFile(null)} className="text-muted-foreground hover:text-foreground">
+                    <XCircle className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+              {error && <p className="text-sm text-red-600">{error}</p>}
+            </div>
+
             <div className="flex justify-between items-center mt-4">
               <p className="text-xs text-muted-foreground">Visible to selected classes immediately.</p>
               <button 
@@ -160,6 +191,12 @@ export default function TeacherAnnouncements() {
                    </span>
                    <span className="font-medium">• {announcement.timeAgo}</span>
                  </div>
+                 {announcement.attachmentName && (
+                   <div className="mt-3 flex items-center gap-2 text-sm text-primary">
+                     <Paperclip className="w-4 h-4" />
+                     <span>{announcement.attachmentName}</span>
+                   </div>
+                 )}
               </div>
             </motion.div>
           ))

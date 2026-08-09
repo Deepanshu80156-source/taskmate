@@ -13,7 +13,9 @@ import LoginPage from '@/pages/LoginPage';
 import StudentDashboard from '@/pages/student/Dashboard';
 import StudentNotes from '@/pages/student/Notes';
 import StudentResults from '@/pages/student/Results';
+import StudentLeaderboard from '@/pages/student/Leaderboard';
 import StudentAnnouncements from '@/pages/student/Announcements';
+import StudentLibrary from '@/pages/student/Library';
 import StudentMessages from '@/pages/student/Messages';
 import StudentProfile from '@/pages/student/Profile';
 import StudentSettings from '@/pages/student/Settings';
@@ -22,6 +24,7 @@ import TeacherStudents from '@/pages/teacher/Students';
 import TeacherRegisterStudent from '@/pages/teacher/RegisterStudent';
 import TeacherUploadNotes from '@/pages/teacher/UploadNotes';
 import TeacherUploadResults from '@/pages/teacher/UploadResults';
+import TeacherResults from '@/pages/teacher/Results';
 import TeacherAnnouncements from '@/pages/teacher/Announcements';
 import TeacherMessages from '@/pages/teacher/Messages';
 import TeacherSettings from '@/pages/teacher/Settings';
@@ -87,7 +90,9 @@ function AppRouter() {
         <Route path="/student/dashboard"     component={() => <ProtectedRoute component={StudentDashboard}    roleRequired="student" />} />
         <Route path="/student/notes"         component={() => <ProtectedRoute component={StudentNotes}        roleRequired="student" />} />
         <Route path="/student/results"       component={() => <ProtectedRoute component={StudentResults}      roleRequired="student" />} />
+        <Route path="/student/leaderboard"   component={() => <ProtectedRoute component={StudentLeaderboard}  roleRequired="student" />} />
         <Route path="/student/announcements" component={() => <ProtectedRoute component={StudentAnnouncements} roleRequired="student" />} />
+        <Route path="/student/library"        component={() => <ProtectedRoute component={StudentLibrary}       roleRequired="student" />} />
         <Route path="/student/messages"      component={() => <ProtectedRoute component={StudentMessages}     roleRequired="student" />} />
         <Route path="/student/profile"       component={() => <ProtectedRoute component={StudentProfile}      roleRequired="student" />} />
         <Route path="/student/settings"      component={() => <ProtectedRoute component={StudentSettings}     roleRequired="student" />} />
@@ -96,6 +101,7 @@ function AppRouter() {
         <Route path="/teacher/register-student"  component={() => <ProtectedRoute component={TeacherRegisterStudent} roleRequired="teacher" />} />
         <Route path="/teacher/upload-notes"      component={() => <ProtectedRoute component={TeacherUploadNotes}     roleRequired="teacher" />} />
         <Route path="/teacher/upload-results"    component={() => <ProtectedRoute component={TeacherUploadResults}   roleRequired="teacher" />} />
+        <Route path="/teacher/results"           component={() => <ProtectedRoute component={TeacherResults}         roleRequired="teacher" />} />
         <Route path="/teacher/announcements"     component={() => <ProtectedRoute component={TeacherAnnouncements}   roleRequired="teacher" />} />
         <Route path="/teacher/messages"          component={() => <ProtectedRoute component={TeacherMessages}        roleRequired="teacher" />} />
         <Route path="/teacher/settings"          component={() => <ProtectedRoute component={TeacherSettings}        roleRequired="teacher" />} />

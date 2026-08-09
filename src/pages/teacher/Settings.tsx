@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Settings as SettingsIcon, Moon, Sun, Lock, Shield, Palette, CheckCircle2, XCircle, Camera } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
+import TaskMateAvatar from '@/components/ui/TaskMateAvatar';
 import { useTheme } from '@/context/ThemeContext';
 
 export default function TeacherSettings() {
@@ -36,22 +37,17 @@ export default function TeacherSettings() {
     setTimeout(() => setPwStatus(null), 4000);
   };
 
-  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !currentUser) return;
-    if (file.size > 2 * 1024 * 1024) {
-      setPhotoStatus('Photo must be under 2 MB.');
-      setTimeout(() => setPhotoStatus(null), 3000);
-      return;
+    setPhotoStatus('Uploading photo...');
+    const result = await updateUserPhoto(currentUser.id, file);
+    if (result.success) {
+      setPhotoStatus('Photo updated successfully.');
+    } else {
+      setPhotoStatus(result.error ?? 'Photo upload failed.');
     }
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string;
-      updateUserPhoto(currentUser.id, dataUrl);
-      setPhotoStatus('Photo updated!');
-      setTimeout(() => setPhotoStatus(null), 3000);
-    };
-    reader.readAsDataURL(file);
+    setTimeout(() => setPhotoStatus(null), 3000);
   };
 
   const colors: { key: 'green' | 'blue' | 'purple'; label: string; cls: string }[] = [
@@ -81,10 +77,7 @@ export default function TeacherSettings() {
               {/* Avatar with change-photo overlay */}
               <div className="relative group shrink-0">
                 <div className="w-20 h-20 rounded-full bg-primary/20 text-primary flex items-center justify-center text-3xl font-bold select-none overflow-hidden">
-                  {currentUser?.photoUrl
-                    ? <img src={currentUser.photoUrl} alt="Profile" className="w-full h-full object-cover" />
-                    : currentUser?.name.charAt(0)
-                  }
+                  <TaskMateAvatar name={currentUser?.name ?? ''} photoUrl={currentUser?.photoUrl} size={20} className="w-full h-full rounded-full" fallbackClassName="text-3xl font-bold" />
                 </div>
                 <button
                   type="button"

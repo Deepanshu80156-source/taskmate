@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { MessageCircle, Send, Search, ArrowLeft } from 'lucide-react';
+import TaskMateAvatar from '@/components/ui/TaskMateAvatar';
+import { MessageCircle, Send, Search, ArrowLeft, RotateCcw } from 'lucide-react';
 
 // ─── localStorage helpers for "last seen" message tracking ───
 const STORAGE_KEY = 'tm_last_seen';
@@ -21,31 +22,13 @@ function hasUnread(studentId: string, latestMsgId: string | undefined): boolean 
   return seen[studentId] !== latestMsgId;
 }
 
-// ─── Avatar helper ───
-function Avatar({ name, photoUrl, size = 10, className = '' }: {
-  name: string; photoUrl?: string; size?: number; className?: string;
-}) {
-  const dim = `w-${size} h-${size}`;
-  if (photoUrl) {
-    return (
-      <div className={`${dim} rounded-full overflow-hidden shrink-0 ${className}`}>
-        <img src={photoUrl} alt={name} className="w-full h-full object-cover" />
-      </div>
-    );
-  }
-  return (
-    <div className={`${dim} rounded-full bg-secondary text-secondary-foreground flex items-center justify-center font-bold text-sm shrink-0 ${className}`}>
-      {name.charAt(0).toUpperCase()}
-    </div>
-  );
-}
-
 export default function TeacherMessages() {
   const { currentUser, getStudentsForTeacher, conversations, sendMessage } = useAuth();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [activeStudentId, setActiveStudentId] = useState<string | null>(null);
   const [newMessage, setNewMessage] = useState('');
+  const [sending, setSending] = useState(false);
   const [, forceUpdate] = useState(0); // trigger re-render when localStorage changes
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -111,9 +94,15 @@ export default function TeacherMessages() {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !activeStudentId || !currentUser) return;
-    await sendMessage(activeStudentId, currentUser.id, newMessage.trim());
-    setNewMessage('');
+    if (!newMessage.trim() || !activeStudentId || !currentUser || sending) return;
+    const messageText = newMessage.trim();
+    setSending(true);
+    try {
+      await sendMessage(activeStudentId, currentUser.id, messageText);
+      setNewMessage('');
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -166,7 +155,7 @@ export default function TeacherMessages() {
                     }`}
                   >
                     <div className="relative shrink-0">
-                      <Avatar name={student.name} photoUrl={student.photoUrl} size={10} />
+                      <TaskMateAvatar name={student.name} photoUrl={student.photoUrl} size={10} />
                       {unread && (
                         <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-primary border-2 border-background" />
                       )}
@@ -211,7 +200,7 @@ export default function TeacherMessages() {
                 >
                   <ArrowLeft className="w-4 h-4" />
                 </button>
-                <Avatar name={activeStudent?.name ?? ''} photoUrl={activeStudent?.photoUrl} size={10} />
+                <TaskMateAvatar name={activeStudent?.name ?? ''} photoUrl={activeStudent?.photoUrl} size={10} />
                 <div>
                   <h3 className="font-semibold text-foreground">{activeStudent?.name}</h3>
                   <p className="text-xs text-muted-foreground">
@@ -233,7 +222,7 @@ export default function TeacherMessages() {
                     return (
                       <div key={msg.id} className={`flex items-end gap-2 ${isMine ? 'justify-end' : 'justify-start'}`}>
                         {!isMine && (
-                          <Avatar name={activeStudent?.name ?? ''} photoUrl={activeStudent?.photoUrl} size={7} />
+                          <TaskMateAvatar name={activeStudent?.name ?? ''} photoUrl={activeStudent?.photoUrl} size={7} />
                         )}
                         <div
                           className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${
@@ -266,10 +255,10 @@ export default function TeacherMessages() {
                   />
                   <button
                     type="submit"
-                    disabled={!newMessage.trim()}
+                    disabled={!newMessage.trim() || sending}
                     className="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    <Send className="w-4 h-4 ml-[-2px]" />
+                    {sending ? <RotateCcw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4 ml-[-2px]" />}
                   </button>
                 </form>
               </div>

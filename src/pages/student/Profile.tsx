@@ -1,5 +1,6 @@
 import React from 'react';
 import { useAuth } from '@/context/AuthContext';
+import TaskMateAvatar from '@/components/ui/TaskMateAvatar';
 import { User, Book, Hash, Phone, Shield } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -27,9 +28,7 @@ export default function StudentProfile() {
       >
         <div className="h-32 bg-primary/20 relative">
           <div className="absolute -bottom-12 left-8 w-24 h-24 rounded-full bg-background p-1.5 shadow-sm">
-            <div className="w-full h-full rounded-full bg-primary/10 text-primary flex items-center justify-center text-3xl font-bold">
-              {currentUser.name.charAt(0)}
-            </div>
+            <TaskMateAvatar name={currentUser.name} photoUrl={currentUser.photoUrl} size={24} className="w-full h-full rounded-full" fallbackClassName="text-3xl font-bold" />
           </div>
         </div>
         

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { BookMarked, Trash2, Plus, Filter } from 'lucide-react';
+import { BookMarked, Trash2, Plus, Filter, Paperclip, FileText, XCircle, Download, ExternalLink } from 'lucide-react';
+import { formatBytes } from '@/lib/fileUpload';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const SUBJECT_ICONS: Record<string, string> = {
@@ -24,6 +25,8 @@ export default function TeacherLibrary() {
   const [filename, setFilename] = useState('');
   const [description, setDescription] = useState('');
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   // Filter state
   const [activeFilter, setActiveFilter] = useState('All');
@@ -35,10 +38,15 @@ export default function TeacherLibrary() {
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return;
-    await addToLibrary({ teacherId: currentUser.id, subject, chapter, filename, description: description || undefined });
-    setSubject(''); setChapter(''); setFilename(''); setDescription('');
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+    setError(null);
+    try {
+      await addToLibrary({ teacherId: currentUser.id, subject, chapter, filename, description: description || undefined, file: selectedFile ?? undefined });
+      setSubject(''); setChapter(''); setFilename(''); setDescription(''); setSelectedFile(null);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the library item.');
+    }
   };
 
   return (
@@ -108,6 +116,22 @@ export default function TeacherLibrary() {
             {saved && (
               <div className="flex items-center gap-2 text-sm bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 px-4 py-2.5 rounded-xl">
                 ✅ Saved to library!
+              </div>
+            )}
+            {error && <p className="text-sm text-red-600">{error}</p>}
+            <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+              <Paperclip className="w-4 h-4" /> Attach file (optional)
+              <input type="file" className="hidden" onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)} />
+            </label>
+            {selectedFile && (
+              <div className="flex items-center justify-between rounded-xl border border-border bg-background/40 px-3 py-2 text-sm">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-primary" />
+                  <span className="truncate">{selectedFile.name} · {formatBytes(selectedFile.size)}</span>
+                </div>
+                <button type="button" onClick={() => setSelectedFile(null)} className="text-muted-foreground hover:text-foreground">
+                  <XCircle className="w-4 h-4" />
+                </button>
               </div>
             )}
 
@@ -194,9 +218,10 @@ export default function TeacherLibrary() {
                       <p className="text-sm text-foreground/70 mt-2 leading-relaxed line-clamp-2">{note.description}</p>
                     )}
 
-                    <p className="text-xs text-muted-foreground mt-3 pt-3 border-t border-border">
-                      Added {fmtDate(note.date)}
-                    </p>
+                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-border text-xs text-muted-foreground">
+                      <span>Added {fmtDate(note.date)}</span>
+                      {note.storagePath ? <span className="inline-flex items-center gap-1 text-primary"><Paperclip className="w-3 h-3" /> Attached</span> : <span className="text-muted-foreground">Text-only</span>}
+                    </div>
                   </motion.div>
                 ))}
               </AnimatePresence>

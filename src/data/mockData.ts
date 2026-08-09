@@ -46,6 +46,10 @@ export interface Announcement {
   date: string;
   timeAgo: string;
   teacherId: string;
+  attachmentPath?: string | null;
+  attachmentName?: string | null;
+  attachmentMimeType?: string | null;
+  attachmentSize?: number | null;
 }
 
 export interface Message {
@@ -53,6 +57,8 @@ export interface Message {
   senderId: string;
   text: string;
   timestamp: string;
+  createdAt?: string;
+  deliveryStatus?: 'sending' | 'sent' | 'failed';
 }
 
 export interface Conversation {

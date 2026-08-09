@@ -1,10 +1,10 @@
 import React, { useMemo } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { Megaphone, Calendar, BellOff } from 'lucide-react';
+import { Megaphone, Calendar, Paperclip, Download, ExternalLink } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function StudentAnnouncements() {
-  const { currentUser, announcements } = useAuth();
+  const { currentUser, announcements, getSignedNoteUrl } = useAuth();
   
   const studentAnnouncements = useMemo(() => {
     if (!currentUser) return [];
@@ -13,6 +13,12 @@ export default function StudentAnnouncements() {
       (a.classScope === 'All Classes' || a.classScope === currentUser.class)
     );
   }, [announcements, currentUser]);
+
+  const handleOpenAttachment = async (announcement: { attachmentPath?: string | null; attachmentName?: string | null }) => {
+    if (!announcement.attachmentPath) return;
+    const url = await getSignedNoteUrl(announcement.attachmentPath);
+    if (url) window.open(url, '_blank');
+  };
 
   return (
     <div className="space-y-8 max-w-3xl">
@@ -58,6 +64,12 @@ export default function StudentAnnouncements() {
                 </span>
                 <span className="text-primary/70 font-medium">• {announcement.timeAgo}</span>
               </div>
+              {announcement.attachmentName && (
+                <button onClick={() => handleOpenAttachment(announcement)} className="mt-4 inline-flex items-center gap-2 text-sm text-primary">
+                  <Paperclip className="w-4 h-4" />
+                  {announcement.attachmentName}
+                </button>
+              )}
             </motion.div>
           ))}
         </div>

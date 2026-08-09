@@ -3,6 +3,7 @@ import React, {
 } from 'react';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
+import { buildStoragePath, validateUploadFile } from '@/lib/fileUpload';
 import {
   User, Role, Note, ExamResult, Announcement,
   Conversation, Notification, LibraryNote, ActivityItem, ActivityType,
@@ -17,7 +18,7 @@ interface AuthContextType {
   registerTeacher: (name: string, username: string, password: string) => Promise<{ success: boolean; error?: string }>;
   changePassword: (oldPassword: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
   resetStudentPassword: (studentId: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
-  updateUserPhoto: (userId: string, photoUrl: string) => Promise<void>;
+  updateUserPhoto: (userId: string, file: File) => Promise<{ success: boolean; error?: string }>;
   students: User[];
   addStudent: (student: Omit<User, 'id' | 'role'> & { password: string }) => Promise<{ success: boolean; error?: string }>;
   removeStudent: (studentId: string) => Promise<void>;
@@ -87,6 +88,10 @@ function rowToAnn(row: Record<string, unknown>): Announcement {
     classScope: row.class_scope as string,
     date: (row.date as string) ?? (row.created_at as string),
     timeAgo: '', teacherId: row.teacher_id as string,
+    attachmentPath: (row.attachment_path as string | null) ?? undefined,
+    attachmentName: (row.attachment_name as string | null) ?? undefined,
+    attachmentMimeType: (row.attachment_mime_type as string | null) ?? undefined,
+    attachmentSize: (row.attachment_size as number | null) ?? undefined,
   };
 }
 function rowToLib(row: Record<string, unknown>): LibraryNote {
@@ -97,6 +102,18 @@ function rowToLib(row: Record<string, unknown>): LibraryNote {
     date: (row.date as string) ?? (row.created_at as string),
     storagePath: (row.storage_path as string) ?? undefined,
   };
+}
+
+function getStorageBucket(storagePath: string): 'notes' | 'announcements' | 'library' | 'avatars' {
+  const normalized = storagePath.replace(/^\/+/, '');
+  const [first] = normalized.split('/');
+  switch (first) {
+    case 'announcements': return 'announcements';
+    case 'library': return 'library';
+    case 'avatars': return 'avatars';
+    case 'notes':
+    default: return 'notes';
+  }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -271,12 +288,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { success: true };
   };
 
-  const updateUserPhoto = async (userId: string, photoUrl: string): Promise<void> => {
-    await supabase.from('profiles').update({ photo_url: photoUrl }).eq('id', userId);
+  const updateUserPhoto = async (userId: string, file: File): Promise<{ success: boolean; error?: string }> => {
+    const validation = validateUploadFile(file, { allowedMimeTypes: ['image/png', 'image/jpeg', 'image/jpg'], maxBytes: 2 * 1024 * 1024 });
+    if (!validation.valid) return { success: false, error: validation.error };
+
+    const storagePath = buildStoragePath(`avatars/${userId}`, file);
+    const { error: uploadError } = await supabase.storage.from('avatars').upload(storagePath, file, { contentType: file.type });
+    if (uploadError) return { success: false, error: 'Photo upload failed. Please try again.' };
+
+    const { data: signedUrlData } = await supabase.storage.from('avatars').createSignedUrl(storagePath, 3600);
+    const photoUrl = signedUrlData?.signedUrl ?? storagePath;
+
+    const { error: updateError } = await supabase.from('profiles').update({ photo_url: photoUrl }).eq('id', userId);
+    if (updateError) {
+      await supabase.storage.from('avatars').remove([storagePath]);
+      return { success: false, error: 'Could not save the photo to your profile.' };
+    }
+
     setCurrentUser(prev => prev ? { ...prev, photoUrl } : prev);
     setStudents(prev => prev.map(s => s.id === userId ? { ...s, photoUrl } : s));
-    // If a teacher updates their photo, reflect it in students' teacherProfile view
     setTeacherProfile(prev => prev?.id === userId ? { ...prev, photoUrl } : prev);
+    return { success: true };
   };
 
   const addStudent = async (student: Omit<User, 'id' | 'role'> & { password: string }): Promise<{ success: boolean; error?: string }> => {
@@ -322,7 +354,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let storagePath: string | null = null;
     if (note.file) {
       const ext = note.file.name.split('.').pop() ?? 'pdf';
-      const path = `${currentUser.id}/${Date.now()}.${ext}`;
+      const path = buildStoragePath(`notes/${currentUser.id}`, new File([note.file], `note.${ext}`, { type: note.file.type || 'application/pdf' }));
       const { error: upErr } = await supabase.storage.from('notes').upload(path, note.file, { contentType: note.file.type || 'application/pdf' });
       if (!upErr) storagePath = path;
     }
@@ -339,7 +371,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const getSignedNoteUrl = async (storagePath: string): Promise<string | null> => {
-    const { data } = await supabase.storage.from('notes').createSignedUrl(storagePath, 3600);
+    const bucket = getStorageBucket(storagePath);
+    const { data } = await supabase.storage.from(bucket).createSignedUrl(storagePath, 3600);
     return data?.signedUrl ?? null;
   };
 
@@ -355,11 +388,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await logActivity(result.teacherId, 'result_published', `Published ${result.examName} for ${student?.name ?? 'a student'}`);
   };
 
-  const addAnnouncement = async (ann: Omit<Announcement, 'id' | 'date' | 'timeAgo'>): Promise<void> => {
+  const addAnnouncement = async (ann: Omit<Announcement, 'id' | 'date' | 'timeAgo'> & { attachmentFile?: File; attachmentName?: string; attachmentMimeType?: string; attachmentSize?: number; attachmentPath?: string }): Promise<void> => {
+    let storagePath: string | null = null;
+    let attachmentName = ann.attachmentName ?? null;
+    let attachmentMimeType = ann.attachmentMimeType ?? null;
+    let attachmentSize = ann.attachmentSize ?? null;
+    if (ann.attachmentFile) {
+      const validation = validateUploadFile(ann.attachmentFile, { allowedMimeTypes: ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'], maxBytes: 10 * 1024 * 1024 });
+      if (!validation.valid) throw new Error(validation.error);
+      const path = buildStoragePath(`announcements/${ann.teacherId}`, ann.attachmentFile);
+      const { error: uploadError } = await supabase.storage.from('announcements').upload(path, ann.attachmentFile, { contentType: ann.attachmentFile.type || 'application/octet-stream' });
+      if (uploadError) throw new Error('The attachment could not be uploaded.');
+      storagePath = path;
+      attachmentName = ann.attachmentFile.name;
+      attachmentMimeType = ann.attachmentFile.type || null;
+      attachmentSize = ann.attachmentFile.size;
+    }
+
     const { data, error } = await supabase.from('announcements').insert({
       teacher_id: ann.teacherId, title: ann.title, content: ann.content, class_scope: ann.classScope,
+      attachment_path: storagePath,
+      attachment_name: attachmentName,
+      attachment_mime_type: attachmentMimeType,
+      attachment_size: attachmentSize,
     }).select().single();
-    if (error || !data) return;
+    if (error || !data) {
+      if (storagePath) await supabase.storage.from('announcements').remove([storagePath]);
+      throw new Error('Announcement could not be saved.');
+    }
     setAnnouncements(prev => [rowToAnn(data as Record<string, unknown>), ...prev]);
     const targets = students.filter(s => s.teacherId === ann.teacherId && (ann.classScope === 'All Classes' || s.class === ann.classScope));
     if (targets.length > 0) await supabase.from('notifications').insert(targets.map(s => ({ student_id: s.id, type: 'announcement', message: `New announcement: ${ann.title}` })));
@@ -410,16 +466,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!currentUser) return;
     let storagePath: string | null = null;
     if (note.file) {
-      const ext = note.file.name.split('.').pop() ?? 'pdf';
-      const path = `${currentUser.id}/${Date.now()}.${ext}`;
-      const { error } = await supabase.storage.from('library').upload(path, note.file);
-      if (!error) storagePath = path;
+      const validation = validateUploadFile(note.file, { allowedMimeTypes: ['application/pdf', 'image/png', 'image/jpeg', 'image/jpg', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'], maxBytes: 10 * 1024 * 1024 });
+      if (!validation.valid) throw new Error(validation.error);
+      const path = buildStoragePath(`library/${currentUser.id}`, note.file);
+      const { error } = await supabase.storage.from('library').upload(path, note.file, { contentType: note.file.type || 'application/octet-stream' });
+      if (error) throw new Error('The file could not be uploaded to the library.');
+      storagePath = path;
     }
     const { data, error } = await supabase.from('library').insert({
       teacher_id: note.teacherId, subject: note.subject, chapter: note.chapter,
       filename: note.filename, description: note.description ?? null, storage_path: storagePath,
     }).select().single();
-    if (error || !data) return;
+    if (error || !data) {
+      if (storagePath) await supabase.storage.from('library').remove([storagePath]);
+      throw new Error('Library item could not be saved.');
+    }
     setLibrary(prev => [rowToLib(data as Record<string, unknown>), ...prev]);
   };
 
