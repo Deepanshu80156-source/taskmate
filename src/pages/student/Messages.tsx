@@ -1,16 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import TaskMateAvatar from '@/components/ui/TaskMateAvatar';
-import { MessageCircle, Send, RotateCcw } from 'lucide-react';
+import { MessageCircle, Send, RotateCcw, Paperclip, Download, XCircle, FileText } from 'lucide-react';
 
 export default function StudentMessages() {
-  const { currentUser, conversations, sendMessage, teacherProfile } = useAuth();
+  const { currentUser, conversations, sendMessage, teacherProfile, getSignedNoteUrl } = useAuth();
 
   const [newMessage, setNewMessage] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [sending, setSending] = useState(false);
   const [pendingMessageId, setPendingMessageId] = useState<string | null>(null);
   const [failedMessageId, setFailedMessageId] = useState<string | null>(null);
+  const [loadingFileId, setLoadingFileId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const activeConv = conversations.find(c => c.studentId === currentUser?.id);
   const messages = activeConv?.messages ?? [];
@@ -25,19 +28,41 @@ export default function StudentMessages() {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !currentUser || sending) return;
+    if ((!newMessage.trim() && !selectedFile) || !currentUser || sending) return;
     const messageText = newMessage.trim();
     setSending(true);
     setPendingMessageId(`local-${Date.now()}`);
     setFailedMessageId(null);
     try {
-      await sendMessage(currentUser.id, currentUser.id, messageText);
+      await sendMessage(currentUser.id, currentUser.id, messageText, selectedFile ?? undefined);
       setNewMessage('');
+      setSelectedFile(null);
     } catch {
       setFailedMessageId(`local-${Date.now()}`);
     } finally {
       setSending(false);
       setPendingMessageId(null);
+    }
+  };
+
+  const handleDownload = async (msg: typeof messages[0]) => {
+    if (!msg.attachmentPath) return;
+    setLoadingFileId(msg.id);
+    try {
+      const url = await getSignedNoteUrl(msg.attachmentPath);
+      if (url) {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = msg.attachmentName || 'download';
+        a.target = '_blank';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+    } catch (error) {
+      console.error('Failed to download file:', error);
+    } finally {
+      setLoadingFileId(null);
     }
   };
 
@@ -89,7 +114,27 @@ export default function StudentMessages() {
                         : 'bg-card border border-border text-card-foreground rounded-bl-sm shadow-sm'
                     }`}
                   >
-                    <p className="leading-relaxed text-sm">{msg.text}</p>
+                    {msg.text && <p className="leading-relaxed text-sm">{msg.text}</p>}
+                    
+                    {msg.attachmentPath && (
+                      <div className="mt-2 bg-white/10 rounded-lg p-2 flex items-center gap-2">
+                        <FileText className="w-4 h-4 shrink-0" />
+                        <span className="text-xs truncate flex-1">{msg.attachmentName}</span>
+                        <button
+                          onClick={() => handleDownload(msg)}
+                          disabled={loadingFileId === msg.id}
+                          className="p-1 hover:bg-white/20 rounded disabled:opacity-50"
+                          title="Download"
+                        >
+                          {loadingFileId === msg.id ? (
+                            <RotateCcw className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Download className="w-3 h-3" />
+                          )}
+                        </button>
+                      </div>
+                    )}
+                    
                     <div className={`flex items-center justify-end gap-2 text-[10px] mt-1 ${isMine ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
                       <span>{msg.timestamp}</span>
                       {isMine && msg.deliveryStatus === 'sending' && <span>Sending…</span>}
@@ -105,7 +150,35 @@ export default function StudentMessages() {
 
         {/* Input Area */}
         <div className="p-4 bg-background/50 border-t border-border shrink-0">
+          {selectedFile && (
+            <div className="mb-3 flex items-center gap-2 bg-muted p-2 rounded-lg text-xs">
+              <FileText className="w-4 h-4 text-primary" />
+              <span className="flex-1 truncate">{selectedFile.name}</span>
+              <button
+                onClick={() => setSelectedFile(null)}
+                className="p-1 hover:bg-muted-foreground/20 rounded"
+              >
+                <XCircle className="w-4 h-4" />
+              </button>
+            </div>
+          )}
           <form onSubmit={handleSend} className="flex gap-2">
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={e => setSelectedFile(e.target.files?.[0] ?? null)}
+              accept="image/*,.pdf,.doc,.docx"
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={sending}
+              className="w-10 h-10 rounded-full bg-muted text-muted-foreground flex items-center justify-center shrink-0 hover:bg-muted/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title="Attach file"
+            >
+              <Paperclip className="w-4 h-4" />
+            </button>
             <input
               type="text"
               value={newMessage}
@@ -115,7 +188,7 @@ export default function StudentMessages() {
             />
             <button
               type="submit"
-              disabled={!newMessage.trim() || sending}
+              disabled={(!newMessage.trim() && !selectedFile) || sending}
               className="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0 hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {sending ? <RotateCcw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4 ml-[-2px]" />}

@@ -73,11 +73,24 @@ export default function TeacherResults() {
             return (
               <div key={result.id} className="glass-card rounded-2xl p-5 border border-border">
                 <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-semibold text-foreground">{student?.name ?? 'Unknown student'}</p>
-                    <p className="text-sm text-muted-foreground">{student?.class ?? 'Class n/a'} · Roll {student?.rollNumber ?? '—'}</p>
+                  <div className="flex items-start gap-3 flex-1 min-w-0">
+                    <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold overflow-hidden shrink-0">
+                      {student?.photoUrl ? (
+                        <img
+                          src={student.photoUrl}
+                          alt={student?.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        student?.name?.charAt(0)
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-semibold text-foreground">{student?.name ?? 'Unknown student'}</p>
+                      <p className="text-sm text-muted-foreground">{student?.class ?? 'Class n/a'} · Roll {student?.rollNumber ?? '—'}</p>
+                    </div>
                   </div>
-                  <div className="text-sm font-semibold text-primary">{percentage}%</div>
+                  <div className="text-sm font-semibold text-primary shrink-0">{percentage}%</div>
                 </div>
                 <div className="mt-4 text-sm text-muted-foreground space-y-1">
                   <p><span className="font-medium text-foreground">Exam:</span> {result.examName}</p>

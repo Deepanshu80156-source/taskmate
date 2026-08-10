@@ -86,6 +86,7 @@ interface AuthContextType {
     studentId: string,
     senderId: string,
     text: string,
+    file?: File,
   ) => Promise<void>;
   notifications: Notification[];
   markNotificationRead: (notificationId: string) => Promise<void>;
@@ -244,6 +245,10 @@ function messageFromRow(row: Record<string, unknown>) {
     }),
     createdAt,
     deliveryStatus: 'sent' as const,
+    attachmentPath: (row.attachment_path as string | null) ?? undefined,
+    attachmentName: (row.attachment_name as string | null) ?? undefined,
+    attachmentMimeType: (row.attachment_mime_type as string | null) ?? undefined,
+    attachmentSize: (row.attachment_size as number | null) ?? undefined,
   };
 }
 
@@ -411,7 +416,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         supabase
           .from('results')
           .select('*')
-          .eq('student_id', student.id)
+          .eq('teacher_id', student.teacherId)
           .order('created_at', { ascending: false }),
         supabase
           .from('announcements')
@@ -1214,11 +1219,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     studentId: string,
     senderId: string,
     text: string,
+    file?: File,
   ) => {
     if (!currentUser) throw new Error('You are not logged in.');
 
     const cleanText = text.trim();
-    if (!cleanText) throw new Error('Message cannot be empty.');
+    if (!cleanText && !file) throw new Error('Message cannot be empty.');
     if (senderId !== currentUser.id) {
       throw new Error('You cannot send a message as another user.');
     }
@@ -1292,17 +1298,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error('The conversation could not be created.');
     }
 
+    // Handle file upload if provided
+    let attachmentPath: string | null = null;
+    let attachmentName: string | null = null;
+    let attachmentMimeType: string | null = null;
+    let attachmentSize: number | null = null;
+
+    if (file) {
+      const validation = validateUploadFile(file, {
+        allowedMimeTypes: [
+          'image/png',
+          'image/jpeg',
+          'image/jpg',
+          'application/pdf',
+          'application/msword',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        ],
+        maxBytes: 20 * 1024 * 1024,
+      });
+
+      if (!validation.valid) {
+        throw new Error(validation.error);
+      }
+
+      const path = buildStoragePath(`message_files/${senderId}`, file);
+      const uploadResult = await supabase.storage
+        .from('message_files')
+        .upload(path, file, { contentType: file.type, upsert: false });
+
+      if (uploadResult.error) {
+        throw new Error('File upload failed. Please try again.');
+      }
+
+      attachmentPath = path;
+      attachmentName = file.name;
+      attachmentMimeType = file.type;
+      attachmentSize = file.size;
+    }
+
     const messageResponse = await supabase
       .from('messages')
       .insert({
         conversation_id: conversationId,
         sender_id: senderId,
         text: cleanText,
+        attachment_path: attachmentPath,
+        attachment_name: attachmentName,
+        attachment_mime_type: attachmentMimeType,
+        attachment_size: attachmentSize,
       })
       .select()
       .single();
 
     if (messageResponse.error || !messageResponse.data) {
+      if (attachmentPath) {
+        await supabase.storage.from('message_files').remove([attachmentPath]);
+      }
       throw new Error('The message could not be sent. Please try again.');
     }
 

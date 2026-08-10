@@ -59,6 +59,10 @@ export interface Message {
   timestamp: string;
   createdAt?: string;
   deliveryStatus?: 'sending' | 'sent' | 'failed';
+  attachmentPath?: string | null;
+  attachmentName?: string | null;
+  attachmentMimeType?: string | null;
+  attachmentSize?: number | null;
 }
 
 export interface Conversation {

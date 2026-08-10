@@ -165,8 +165,16 @@ export default function TeacherStudents() {
               </div>
 
               <div className="flex items-center gap-4 mb-6">
-                <div className="w-16 h-16 rounded-full bg-primary/20 text-primary flex items-center justify-center text-2xl font-bold">
-                  {idCardStudent.name.charAt(0)}
+                <div className="w-16 h-16 rounded-full bg-primary/20 text-primary flex items-center justify-center text-2xl font-bold overflow-hidden shrink-0">
+                  {idCardStudent.photoUrl ? (
+                    <img
+                      src={idCardStudent.photoUrl}
+                      alt={idCardStudent.name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    idCardStudent.name.charAt(0)
+                  )}
                 </div>
                 <div>
                   <p className="text-xl font-bold text-foreground">{idCardStudent.name}</p>
@@ -316,8 +324,16 @@ export default function TeacherStudents() {
                           className="flex items-center gap-3 hover:text-primary transition-colors text-left"
                           title="View ID card"
                         >
-                          <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold shrink-0">
-                            {student.name.charAt(0)}
+                          <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold shrink-0 overflow-hidden">
+                            {student.photoUrl ? (
+                              <img
+                                src={student.photoUrl}
+                                alt={student.name}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              student.name.charAt(0)
+                            )}
                           </div>
                           <span className="font-medium text-foreground hover:underline">{student.name}</span>
                         </button>

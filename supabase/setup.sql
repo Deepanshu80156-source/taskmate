@@ -161,12 +161,21 @@ CREATE INDEX IF NOT EXISTS conversations_student_id_idx ON conversations(student
 
 -- messages — individual chat messages
 CREATE TABLE IF NOT EXISTS messages (
-  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  conversation_id UUID        NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-  sender_id       UUID        NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  text            TEXT        NOT NULL,
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+  id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  conversation_id     UUID        NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  sender_id           UUID        NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  text                TEXT        NOT NULL,
+  attachment_path     TEXT,
+  attachment_name     TEXT,
+  attachment_mime_type TEXT,
+  attachment_size     BIGINT,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_path TEXT;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_name TEXT;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_mime_type TEXT;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachment_size BIGINT;
 
 CREATE INDEX IF NOT EXISTS messages_conversation_id_idx ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS messages_created_at_idx      ON messages(created_at);
@@ -253,6 +262,12 @@ CREATE POLICY "results: teacher full access"
 DROP POLICY IF EXISTS "results: student reads own results" ON results;
 CREATE POLICY "results: student reads own results"
   ON results FOR SELECT USING (student_id = auth.uid());
+
+DROP POLICY IF EXISTS "results: student reads class results" ON results;
+CREATE POLICY "results: student reads class results"
+  ON results FOR SELECT USING (
+    teacher_id = get_my_teacher_id()
+  );
 
 -- announcements
 DROP POLICY IF EXISTS "announcements: teacher full access" ON announcements;
@@ -344,7 +359,8 @@ VALUES
   ('notes',         'notes',         false, 52428800, ARRAY['application/pdf','image/png','image/jpeg','image/jpg']),
   ('library',       'library',       false, 52428800, ARRAY['application/pdf','image/png','image/jpeg','image/jpg']),
   ('announcements', 'announcements', false, 10485760, ARRAY['application/pdf','image/png','image/jpeg','image/jpg','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document']),
-  ('avatars',       'avatars',       false, 2097152, ARRAY['image/png','image/jpeg','image/jpg'])
+  ('avatars',       'avatars',       false, 2097152, ARRAY['image/png','image/jpeg','image/jpg']),
+  ('message_files', 'message_files', false, 20971520, ARRAY['image/png','image/jpeg','image/jpg','application/pdf','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document'])
 ON CONFLICT (id) DO NOTHING;
 
 -- notes bucket
@@ -428,6 +444,33 @@ DROP POLICY IF EXISTS "storage avatars: user can delete own" ON storage.objects;
 CREATE POLICY "storage avatars: user can delete own"
   ON storage.objects FOR DELETE
   USING (bucket_id = 'avatars' AND auth.uid()::text = (storage.foldername(name))[1]);
+
+-- message_files bucket
+DROP POLICY IF EXISTS "storage message_files: sender can upload" ON storage.objects;
+CREATE POLICY "storage message_files: sender can upload"
+  ON storage.objects FOR INSERT
+  WITH CHECK (bucket_id = 'message_files' AND auth.uid()::text = (storage.foldername(name))[1]);
+
+DROP POLICY IF EXISTS "storage message_files: conversation participants can read" ON storage.objects;
+CREATE POLICY "storage message_files: conversation participants can read"
+  ON storage.objects FOR SELECT
+  USING (
+    bucket_id = 'message_files'
+    AND EXISTS (
+      SELECT 1 FROM messages m
+      WHERE m.attachment_path = name
+        AND EXISTS (
+          SELECT 1 FROM conversations c
+          WHERE c.id = m.conversation_id
+            AND (c.teacher_id = auth.uid() OR c.student_id = auth.uid())
+        )
+    )
+  );
+
+DROP POLICY IF EXISTS "storage message_files: sender can delete" ON storage.objects;
+CREATE POLICY "storage message_files: sender can delete"
+  ON storage.objects FOR DELETE
+  USING (bucket_id = 'message_files' AND auth.uid()::text = (storage.foldername(name))[1]);
 
 
 -- ============================================================
