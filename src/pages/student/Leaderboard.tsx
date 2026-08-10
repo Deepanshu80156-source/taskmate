@@ -7,27 +7,55 @@ export default function StudentLeaderboard() {
   const { currentUser, students, results } = useAuth();
 
   const leaderboard = useMemo(() => {
-    if (!currentUser?.class) return [];
+    if (!currentUser?.class || !currentUser.teacherId) return [];
 
-    const classmates = students.filter(student => student.role === 'student' && student.class === currentUser.class);
+    const classmates = students.filter(
+      student =>
+        student.role === 'student' &&
+        student.class === currentUser.class &&
+        student.teacherId === currentUser.teacherId
+    );
 
     return classmates
       .map(student => {
-        const studentResults = results.filter(result => result.studentId === student.id);
-        const average = studentResults.length
-          ? Math.round(studentResults.reduce((sum, result) => sum + (result.marksObtained / result.totalMarks) * 100, 0) / studentResults.length)
+        const studentResults = results.filter(
+          result => result.studentId === student.id
+        );
+
+        const validResults = studentResults.filter(
+          result => result.totalMarks > 0
+        );
+
+        const average = validResults.length
+          ? Math.round(
+              validResults.reduce(
+                (sum, result) =>
+                  sum + (result.marksObtained / result.totalMarks) * 100,
+                0
+              ) / validResults.length
+            )
+          : 0;
+
+        const best = validResults.length
+          ? Math.max(
+              ...validResults.map(result =>
+                Math.round((result.marksObtained / result.totalMarks) * 100)
+              )
+            )
           : 0;
 
         return {
           student,
           average,
-          exams: studentResults.length,
-          best: studentResults.length
-            ? Math.max(...studentResults.map(result => Math.round((result.marksObtained / result.totalMarks) * 100)))
-            : 0,
+          exams: validResults.length,
+          best,
         };
       })
-      .sort((a, b) => b.average - a.average || a.student.name.localeCompare(b.student.name));
+      .sort(
+        (a, b) =>
+          b.average - a.average ||
+          a.student.name.localeCompare(b.student.name)
+      );
   }, [currentUser, students, results]);
 
   const currentRank = leaderboard.findIndex(item => item.student.id === currentUser?.id) + 1;

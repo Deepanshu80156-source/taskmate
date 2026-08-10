@@ -210,6 +210,15 @@ DROP POLICY IF EXISTS "profiles: teacher views students" ON profiles;
 CREATE POLICY "profiles: teacher views students"
   ON profiles FOR SELECT USING (role = 'student' AND teacher_id = auth.uid());
 
+DROP POLICY IF EXISTS "profiles: student views classmates" ON profiles;
+CREATE POLICY "profiles: student views classmates"
+  ON profiles FOR SELECT
+  USING (
+    role = 'student'
+    AND teacher_id = get_my_teacher_id()
+    AND class = get_my_class()
+  );
+
 DROP POLICY IF EXISTS "profiles: insert own" ON profiles;
 CREATE POLICY "profiles: insert own"
   ON profiles FOR INSERT WITH CHECK (id = auth.uid());
@@ -258,6 +267,13 @@ CREATE POLICY "announcements: student reads teacher announcements"
 DROP POLICY IF EXISTS "library: teacher full access" ON library;
 CREATE POLICY "library: teacher full access"
   ON library FOR ALL USING (teacher_id = auth.uid());
+
+DROP POLICY IF EXISTS "library: student reads teacher files" ON library;
+CREATE POLICY "library: student reads teacher files"
+  ON library FOR SELECT
+  USING (
+    teacher_id = get_my_teacher_id()
+  );
 
 -- activity_log
 DROP POLICY IF EXISTS "activity_log: teacher full access" ON activity_log;
@@ -362,6 +378,14 @@ DROP POLICY IF EXISTS "storage library: teacher can read own" ON storage.objects
 CREATE POLICY "storage library: teacher can read own"
   ON storage.objects FOR SELECT
   USING (bucket_id = 'library' AND auth.uid()::text = (storage.foldername(name))[1]);
+
+DROP POLICY IF EXISTS "storage library: student reads teacher files" ON storage.objects;
+CREATE POLICY "storage library: student reads teacher files"
+  ON storage.objects FOR SELECT
+  USING (
+    bucket_id = 'library'
+    AND (storage.foldername(name))[1] = get_my_teacher_id()::text
+  );
 
 DROP POLICY IF EXISTS "storage library: teacher can delete" ON storage.objects;
 CREATE POLICY "storage library: teacher can delete"

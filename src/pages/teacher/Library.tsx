@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { BookMarked, Trash2, Plus, Filter, Paperclip, FileText, XCircle, Download, ExternalLink } from 'lucide-react';
+import { BookMarked, Trash2, Plus, Filter, Paperclip, FileText, XCircle, Download, ExternalLink, AlertCircle } from 'lucide-react';
 import { formatBytes } from '@/lib/fileUpload';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -17,7 +17,7 @@ function fmtDate(d: string) {
 }
 
 export default function TeacherLibrary() {
-  const { currentUser, getLibraryForTeacher, addToLibrary, removeFromLibrary } = useAuth();
+  const { currentUser, getLibraryForTeacher, addToLibrary, removeFromLibrary, getSignedNoteUrl } = useAuth();
 
   // Form state
   const [subject, setSubject] = useState('');
@@ -30,6 +30,10 @@ export default function TeacherLibrary() {
 
   // Filter state
   const [activeFilter, setActiveFilter] = useState('All');
+
+  // File action state
+  const [loadingFileId, setLoadingFileId] = useState<string | null>(null);
+  const [errorFileId, setErrorFileId] = useState<string | null>(null);
 
   const library = currentUser ? getLibraryForTeacher(currentUser.id) : [];
   const subjects = ['All', ...Array.from(new Set(library.map(n => n.subject).filter(Boolean)))];
@@ -46,6 +50,48 @@ export default function TeacherLibrary() {
       setTimeout(() => setSaved(false), 2500);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save the library item.');
+    }
+  };
+
+  const handleOpen = async (item: { id: string; filename?: string; storagePath?: string }) => {
+    if (!item.storagePath) return;
+    setLoadingFileId(item.id);
+    setErrorFileId(null);
+    try {
+      const url = await getSignedNoteUrl(item.storagePath);
+      if (url) {
+        window.open(url, '_blank');
+      } else {
+        setErrorFileId(item.id);
+      }
+    } catch (err) {
+      setErrorFileId(item.id);
+    } finally {
+      setLoadingFileId(null);
+    }
+  };
+
+  const handleDownload = async (item: { id: string; filename?: string; storagePath?: string }) => {
+    if (!item.storagePath) return;
+    setLoadingFileId(item.id);
+    setErrorFileId(null);
+    try {
+      const url = await getSignedNoteUrl(item.storagePath);
+      if (url) {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = item.filename || 'download';
+        a.target = '_blank';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } else {
+        setErrorFileId(item.id);
+      }
+    } catch (err) {
+      setErrorFileId(item.id);
+    } finally {
+      setLoadingFileId(null);
     }
   };
 
@@ -222,6 +268,40 @@ export default function TeacherLibrary() {
                       <span>Added {fmtDate(note.date)}</span>
                       {note.storagePath ? <span className="inline-flex items-center gap-1 text-primary"><Paperclip className="w-3 h-3" /> Attached</span> : <span className="text-muted-foreground">Text-only</span>}
                     </div>
+
+                    {note.storagePath && (
+                      <div className="mt-3 flex gap-2">
+                        <button
+                          onClick={() => handleOpen(note)}
+                          disabled={loadingFileId === note.id}
+                          className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50 px-2 py-1.5 text-xs transition-colors"
+                        >
+                          {loadingFileId === note.id ? (
+                            <>Loading…</>
+                          ) : (
+                            <>
+                              <ExternalLink className="w-3 h-3" />
+                              Open
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => handleDownload(note)}
+                          disabled={loadingFileId === note.id}
+                          className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-secondary/50 text-secondary-foreground hover:bg-secondary disabled:opacity-50 px-2 py-1.5 text-xs transition-colors"
+                        >
+                          <Download className="w-3 h-3" />
+                          Download
+                        </button>
+                      </div>
+                    )}
+
+                    {errorFileId === note.id && (
+                      <div className="mt-2 flex items-start gap-1.5 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-1.5 rounded">
+                        <AlertCircle className="w-3 h-3 shrink-0 mt-0.25" />
+                        <span>Could not load the file. Try again later.</span>
+                      </div>
+                    )}
                   </motion.div>
                 ))}
               </AnimatePresence>

@@ -14,6 +14,7 @@ import StudentDashboard from '@/pages/student/Dashboard';
 import StudentNotes from '@/pages/student/Notes';
 import StudentResults from '@/pages/student/Results';
 import StudentLeaderboard from '@/pages/student/Leaderboard';
+import StudentMyClass from '@/pages/student/MyClass';
 import StudentAnnouncements from '@/pages/student/Announcements';
 import StudentLibrary from '@/pages/student/Library';
 import StudentMessages from '@/pages/student/Messages';
@@ -91,6 +92,7 @@ function AppRouter() {
         <Route path="/student/notes"         component={() => <ProtectedRoute component={StudentNotes}        roleRequired="student" />} />
         <Route path="/student/results"       component={() => <ProtectedRoute component={StudentResults}      roleRequired="student" />} />
         <Route path="/student/leaderboard"   component={() => <ProtectedRoute component={StudentLeaderboard}  roleRequired="student" />} />
+        <Route path="/student/class"         component={() => <ProtectedRoute component={StudentMyClass}      roleRequired="student" />} />
         <Route path="/student/announcements" component={() => <ProtectedRoute component={StudentAnnouncements} roleRequired="student" />} />
         <Route path="/student/library"        component={() => <ProtectedRoute component={StudentLibrary}       roleRequired="student" />} />
         <Route path="/student/messages"      component={() => <ProtectedRoute component={StudentMessages}     roleRequired="student" />} />

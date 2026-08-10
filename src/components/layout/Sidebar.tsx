@@ -30,6 +30,7 @@ export function Sidebar({ mobile }: { mobile?: boolean }) {
     { href: '/student/notes', label: 'Notes', icon: BookOpen },
     { href: '/student/results', label: 'Results', icon: BarChart2 },
     { href: '/student/leaderboard', label: 'Leaderboard', icon: Trophy },
+    { href: '/student/class', label: 'My Class', icon: Users },
     { href: '/student/announcements', label: 'Announcements', icon: Megaphone },
     { href: '/student/library', label: 'Library', icon: BookMarked },
     { href: '/student/messages', label: 'Messages', icon: MessageCircle },

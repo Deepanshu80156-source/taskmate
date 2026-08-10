@@ -67,7 +67,9 @@ export default function TeacherResults() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {visibleResults.map(result => {
             const student = teacherStudents.find(item => item.id === result.studentId);
-            const percentage = Math.round((result.marksObtained / result.totalMarks) * 100);
+            const percentage = result.totalMarks > 0
+              ? Math.round((result.marksObtained / result.totalMarks) * 100)
+              : 0;
             return (
               <div key={result.id} className="glass-card rounded-2xl p-5 border border-border">
                 <div className="flex items-start justify-between gap-3">

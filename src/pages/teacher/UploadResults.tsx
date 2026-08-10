@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { BarChart2, Save, CheckCircle, FileText } from 'lucide-react';
+import { BarChart2, Save, CheckCircle, FileText, AlertCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function TeacherUploadResults() {
   const { currentUser, getStudentsForTeacher, addResult, results } = useAuth();
   
   const [success, setSuccess] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<{name: string, score: number} | null>(null);
 
   const [formData, setFormData] = useState({
@@ -23,37 +25,64 @@ export default function TeacherUploadResults() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentUser) return;
+    if (!currentUser || submitting) return;
+    
+    setError(null);
+    
+    // Validate required fields
+    if (!formData.studentId || !formData.examName || !formData.subject || !formData.marksObtained) {
+      setError('Please fill in all required fields.');
+      return;
+    }
     
     const marksObtained = Number(formData.marksObtained);
     const totalMarks = Number(formData.totalMarks);
     
+    // Validate total marks
+    if (totalMarks <= 0) {
+      setError('Total marks must be greater than 0.');
+      return;
+    }
+    
+    // Validate marks obtained
+    if (marksObtained < 0) {
+      setError('Marks obtained cannot be negative.');
+      return;
+    }
+    
     if (marksObtained > totalMarks) {
-      alert('Marks obtained cannot be greater than total marks.');
+      setError('Marks obtained cannot be greater than total marks.');
       return;
     }
 
-    await addResult({
-      studentId: formData.studentId,
-      examName: formData.examName,
-      subject: formData.subject,
-      marksObtained,
-      totalMarks,
-      remarks: formData.remarks,
-      teacherId: currentUser.id
-    });
+    setSubmitting(true);
+    try {
+      await addResult({
+        studentId: formData.studentId,
+        examName: formData.examName,
+        subject: formData.subject,
+        marksObtained,
+        totalMarks,
+        remarks: formData.remarks,
+        teacherId: currentUser.id
+      });
 
-    const student = teacherStudents.find(s => s.id === formData.studentId);
-    setLastResult({
-      name: student?.name || 'Student',
-      score: Math.round((marksObtained / totalMarks) * 100)
-    });
+      const student = teacherStudents.find(s => s.id === formData.studentId);
+      setLastResult({
+        name: student?.name || 'Student',
+        score: Math.round((marksObtained / totalMarks) * 100)
+      });
 
-    setSuccess(true);
-    setTimeout(() => {
-      setSuccess(false);
-      setFormData(prev => ({ ...prev, studentId: '', marksObtained: '', remarks: '' }));
-    }, 4000);
+      setSuccess(true);
+      setTimeout(() => {
+        setSuccess(false);
+        setFormData(prev => ({ ...prev, studentId: '', marksObtained: '', remarks: '' }));
+      }, 4000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the result. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -144,10 +173,17 @@ export default function TeacherUploadResults() {
                    placeholder="e.g. Excellent improvement in algebra. Keep it up!" />
                </div>
 
+               {error && (
+                 <div className="flex items-start gap-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-3 rounded-xl">
+                   <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                   <span>{error}</span>
+                 </div>
+               )}
+
                <div className="pt-4 flex justify-end">
-                 <button type="submit" className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-xl px-8 py-3 transition-colors flex items-center gap-2">
+                 <button type="submit" disabled={submitting} className="bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-primary-foreground font-semibold rounded-xl px-8 py-3 transition-colors flex items-center gap-2">
                    <Save className="w-5 h-5" />
-                   Save Result
+                   {submitting ? 'Saving...' : 'Save Result'}
                  </button>
                </div>
              </form>

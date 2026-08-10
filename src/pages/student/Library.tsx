@@ -1,23 +1,58 @@
 import React, { useMemo, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { BookMarked, Paperclip, Download, ExternalLink, FileText } from 'lucide-react';
+import { BookMarked, Paperclip, Download, ExternalLink, FileText, AlertCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function StudentLibrary() {
   const { currentUser, library, getSignedNoteUrl } = useAuth();
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [errorId, setErrorId] = useState<string | null>(null);
 
   const studentLibrary = useMemo(() => {
     if (!currentUser?.teacherId) return [];
     return library.filter(item => item.teacherId === currentUser.teacherId);
   }, [currentUser, library]);
 
-  const handleOpen = async (item: { id: string; storagePath?: string }) => {
+  const handleOpen = async (item: { id: string; filename?: string; storagePath?: string }) => {
     if (!item.storagePath) return;
     setLoadingId(item.id);
-    const url = await getSignedNoteUrl(item.storagePath);
-    setLoadingId(null);
-    if (url) window.open(url, '_blank');
+    setErrorId(null);
+    try {
+      const url = await getSignedNoteUrl(item.storagePath);
+      if (url) {
+        window.open(url, '_blank');
+      } else {
+        setErrorId(item.id);
+      }
+    } catch (error) {
+      setErrorId(item.id);
+    } finally {
+      setLoadingId(null);
+    }
+  };
+
+  const handleDownload = async (item: { id: string; filename?: string; storagePath?: string }) => {
+    if (!item.storagePath) return;
+    setLoadingId(item.id);
+    setErrorId(null);
+    try {
+      const url = await getSignedNoteUrl(item.storagePath);
+      if (url) {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = item.filename || 'download';
+        a.target = '_blank';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } else {
+        setErrorId(item.id);
+      }
+    } catch (error) {
+      setErrorId(item.id);
+    } finally {
+      setLoadingId(null);
+    }
   };
 
   return (
@@ -54,11 +89,38 @@ export default function StudentLibrary() {
                 </div>
               </div>
               {item.storagePath ? (
-                <button onClick={() => handleOpen(item)} disabled={loadingId === item.id} className="mt-4 inline-flex items-center gap-2 rounded-xl bg-primary/10 text-primary px-3 py-2 text-sm">
-                  {loadingId === item.id ? 'Opening…' : <><Paperclip className="w-4 h-4" /> Open attachment</>}
-                </button>
+                <div className="mt-4 flex gap-2">
+                  <button
+                    onClick={() => handleOpen(item)}
+                    disabled={loadingId === item.id}
+                    className="inline-flex items-center gap-2 rounded-xl bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50 px-3 py-2 text-sm transition-colors"
+                  >
+                    {loadingId === item.id ? (
+                      <>Loading…</>
+                    ) : (
+                      <>
+                        <ExternalLink className="w-4 h-4" />
+                        Open
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => handleDownload(item)}
+                    disabled={loadingId === item.id}
+                    className="inline-flex items-center gap-2 rounded-xl bg-secondary/50 text-secondary-foreground hover:bg-secondary disabled:opacity-50 px-3 py-2 text-sm transition-colors"
+                  >
+                    <Download className="w-4 h-4" />
+                    Download
+                  </button>
+                </div>
               ) : (
                 <p className="mt-4 text-sm text-muted-foreground">No attachment available for this resource.</p>
+              )}
+              {errorId === item.id && (
+                <div className="mt-3 flex items-start gap-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-2 rounded-lg">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>Could not load the file. Please try again later.</span>
+                </div>
               )}
             </motion.div>
           ))}

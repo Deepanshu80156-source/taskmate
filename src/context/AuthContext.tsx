@@ -400,6 +400,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         notificationsResponse,
         teacherResponse,
         libraryResponse,
+        classmatesResponse,
       ] = await Promise.all([
         supabase
           .from('notes')
@@ -432,6 +433,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .select('*')
           .eq('teacher_id', student.teacherId)
           .order('created_at', { ascending: false }),
+        supabase
+          .from('profiles')
+          .select('*')
+          .eq('teacher_id', student.teacherId)
+          .eq('class', student.class)
+          .eq('role', 'student'),
       ]);
 
       if (teacherResponse.data) {
@@ -465,6 +472,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       if (libraryResponse.data) {
         setLibrary(libraryResponse.data.map((row) => rowToLibrary(asRecord(row))));
+      }
+      if (classmatesResponse.data) {
+        const classmates = classmatesResponse.data.map((row) =>
+          rowToUser(asRecord(row)),
+        );
+        const classmateIds = new Set(classmates.map(c => c.id));
+        const merged = classmateIds.has(student.id)
+          ? classmates
+          : [student, ...classmates];
+        setStudents(merged);
       }
 
       await loadConversations(student.id, 'student');
