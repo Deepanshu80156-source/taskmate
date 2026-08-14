@@ -4,6 +4,7 @@ import { Users, Search, Trash2, Edit, Download, CreditCard, KeyRound, UserPlus, 
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'wouter';
 import { User } from '@/data/mockData';
+import TaskMateAvatar from '@/components/ui/TaskMateAvatar';
 
 export default function TeacherStudents() {
   const { currentUser, getStudentsForTeacher, removeStudent, updateStudent, resetStudentPassword } = useAuth();
@@ -165,17 +166,12 @@ export default function TeacherStudents() {
               </div>
 
               <div className="flex items-center gap-4 mb-6">
-                <div className="w-16 h-16 rounded-full bg-primary/20 text-primary flex items-center justify-center text-2xl font-bold overflow-hidden shrink-0">
-                  {idCardStudent.photoUrl ? (
-                    <img
-                      src={idCardStudent.photoUrl}
-                      alt={idCardStudent.name}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    idCardStudent.name.charAt(0)
-                  )}
-                </div>
+                <TaskMateAvatar
+                  name={idCardStudent.name}
+                  photoUrl={idCardStudent.photoUrl}
+                  size={16}
+                  className="bg-primary/20 text-primary text-2xl"
+                />
                 <div>
                   <p className="text-xl font-bold text-foreground">{idCardStudent.name}</p>
                   <p className="text-sm text-muted-foreground">{idCardStudent.class ? `Class ${idCardStudent.class}` : 'Student'}</p>
@@ -240,8 +236,8 @@ export default function TeacherStudents() {
                     value={resetPw}
                     onChange={e => setResetPw(e.target.value)}
                     required
-                    minLength={4}
-                    placeholder="New password (min 4 characters)"
+                    minLength={8}
+                    placeholder="New password (min 8 characters)"
                     className="w-full bg-background/50 border border-input rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                   <div className="flex gap-3">
@@ -324,17 +320,12 @@ export default function TeacherStudents() {
                           className="flex items-center gap-3 hover:text-primary transition-colors text-left"
                           title="View ID card"
                         >
-                          <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-bold shrink-0 overflow-hidden">
-                            {student.photoUrl ? (
-                              <img
-                                src={student.photoUrl}
-                                alt={student.name}
-                                className="w-full h-full object-cover"
-                              />
-                            ) : (
-                              student.name.charAt(0)
-                            )}
-                          </div>
+                          <TaskMateAvatar
+                            name={student.name}
+                            photoUrl={student.photoUrl}
+                            size={8}
+                            className="bg-primary/10 text-primary text-sm"
+                          />
                           <span className="font-medium text-foreground hover:underline">{student.name}</span>
                         </button>
                       </td>

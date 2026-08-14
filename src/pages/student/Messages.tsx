@@ -1,12 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import TaskMateAvatar from '@/components/ui/TaskMateAvatar';
-import { MessageCircle, Send, RotateCcw, Paperclip, Download, XCircle, FileText } from 'lucide-react';
+import MessageAttachment from '@/components/MessageAttachment';
+import { usePersistentState } from '@/hooks/usePersistentState';
+import { MessageCircle, Send, RotateCcw, Paperclip, XCircle, FileText } from 'lucide-react';
 
 export default function StudentMessages() {
   const { currentUser, conversations, sendMessage, teacherProfile, getSignedNoteUrl } = useAuth();
 
-  const [newMessage, setNewMessage] = useState('');
+  const [newMessage, setNewMessage] = usePersistentState(
+    `taskmate:draft:student-message:${currentUser?.id ?? 'guest'}`,
+    '',
+  );
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [sending, setSending] = useState(false);
   const [pendingMessageId, setPendingMessageId] = useState<string | null>(null);
@@ -117,22 +122,12 @@ export default function StudentMessages() {
                     {msg.text && <p className="leading-relaxed text-sm">{msg.text}</p>}
                     
                     {msg.attachmentPath && (
-                      <div className="mt-2 bg-white/10 rounded-lg p-2 flex items-center gap-2">
-                        <FileText className="w-4 h-4 shrink-0" />
-                        <span className="text-xs truncate flex-1">{msg.attachmentName}</span>
-                        <button
-                          onClick={() => handleDownload(msg)}
-                          disabled={loadingFileId === msg.id}
-                          className="p-1 hover:bg-white/20 rounded disabled:opacity-50"
-                          title="Download"
-                        >
-                          {loadingFileId === msg.id ? (
-                            <RotateCcw className="w-3 h-3 animate-spin" />
-                          ) : (
-                            <Download className="w-3 h-3" />
-                          )}
-                        </button>
-                      </div>
+                      <MessageAttachment
+                        message={msg}
+                        getSignedUrl={getSignedNoteUrl}
+                        onDownload={() => handleDownload(msg)}
+                        loading={loadingFileId === msg.id}
+                      />
                     )}
                     
                     <div className={`flex items-center justify-end gap-2 text-[10px] mt-1 ${isMine ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>

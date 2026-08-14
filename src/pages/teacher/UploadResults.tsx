@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { BarChart2, Save, CheckCircle, FileText, AlertCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { usePersistentState } from '@/hooks/usePersistentState';
 
 export default function TeacherUploadResults() {
   const { currentUser, getStudentsForTeacher, addResult, results } = useAuth();
@@ -11,14 +12,17 @@ export default function TeacherUploadResults() {
   const [error, setError] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<{name: string, score: number} | null>(null);
 
-  const [formData, setFormData] = useState({
-    studentId: '',
-    examName: '',
-    subject: '',
-    marksObtained: '',
-    totalMarks: '100',
-    remarks: ''
-  });
+  const [formData, setFormData] = usePersistentState(
+    `taskmate:form:upload-results:${currentUser?.id ?? 'guest'}`,
+    {
+      studentId: '',
+      examName: '',
+      subject: '',
+      marksObtained: '',
+      totalMarks: '100',
+      remarks: '',
+    },
+  );
 
   const teacherStudents = currentUser ? getStudentsForTeacher(currentUser.id) : [];
   const recentResults = results.filter(r => r.teacherId === currentUser?.id).slice(0, 5);

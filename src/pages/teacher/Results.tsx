@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import TaskMateAvatar from '@/components/ui/TaskMateAvatar';
 import { BarChart2, Search, Filter } from 'lucide-react';
 
 export default function TeacherResults() {
@@ -74,17 +75,12 @@ export default function TeacherResults() {
               <div key={result.id} className="glass-card rounded-2xl p-5 border border-border">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3 flex-1 min-w-0">
-                    <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold overflow-hidden shrink-0">
-                      {student?.photoUrl ? (
-                        <img
-                          src={student.photoUrl}
-                          alt={student?.name}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        student?.name?.charAt(0)
-                      )}
-                    </div>
+                    <TaskMateAvatar
+                      name={student?.name ?? 'Unknown student'}
+                      photoUrl={student?.photoUrl}
+                      size={10}
+                      className="bg-primary/10 text-primary"
+                    />
                     <div className="min-w-0">
                       <p className="font-semibold text-foreground">{student?.name ?? 'Unknown student'}</p>
                       <p className="text-sm text-muted-foreground">{student?.class ?? 'Class n/a'} · Roll {student?.rollNumber ?? '—'}</p>

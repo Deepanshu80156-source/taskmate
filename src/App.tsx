@@ -26,6 +26,7 @@ import TeacherRegisterStudent from '@/pages/teacher/RegisterStudent';
 import TeacherUploadNotes from '@/pages/teacher/UploadNotes';
 import TeacherUploadResults from '@/pages/teacher/UploadResults';
 import TeacherResults from '@/pages/teacher/Results';
+import TeacherLeaderboard from '@/pages/teacher/Leaderboard';
 import TeacherAnnouncements from '@/pages/teacher/Announcements';
 import TeacherMessages from '@/pages/teacher/Messages';
 import TeacherSettings from '@/pages/teacher/Settings';
@@ -104,6 +105,7 @@ function AppRouter() {
         <Route path="/teacher/upload-notes"      component={() => <ProtectedRoute component={TeacherUploadNotes}     roleRequired="teacher" />} />
         <Route path="/teacher/upload-results"    component={() => <ProtectedRoute component={TeacherUploadResults}   roleRequired="teacher" />} />
         <Route path="/teacher/results"           component={() => <ProtectedRoute component={TeacherResults}         roleRequired="teacher" />} />
+         <Route path="/teacher/leaderboard"       component={() => <ProtectedRoute component={TeacherLeaderboard}     roleRequired="teacher" />} />
         <Route path="/teacher/announcements"     component={() => <ProtectedRoute component={TeacherAnnouncements}   roleRequired="teacher" />} />
         <Route path="/teacher/messages"          component={() => <ProtectedRoute component={TeacherMessages}        roleRequired="teacher" />} />
         <Route path="/teacher/settings"          component={() => <ProtectedRoute component={TeacherSettings}        roleRequired="teacher" />} />

@@ -95,7 +95,8 @@ export type ActivityType =
   | 'notes_uploaded'
   | 'result_published'
   | 'announcement_posted'
-  | 'message_sent';
+  | 'message_sent'
+  | 'password_reset';
 
 export interface ActivityItem {
   id: string;

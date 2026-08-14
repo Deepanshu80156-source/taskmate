@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import TaskMateAvatar from '@/components/ui/TaskMateAvatar';
 import { Users, User as UserIcon } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -79,17 +80,12 @@ export default function StudentMyClass() {
                       }`}
                     >
                       <div className="flex items-start gap-3">
-                        <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 flex items-center justify-center font-semibold shrink-0 overflow-hidden">
-                          {classmate.photoUrl ? (
-                            <img
-                              src={classmate.photoUrl}
-                              alt={classmate.name}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            classmate.name.charAt(0)
-                          )}
-                        </div>
+                        <TaskMateAvatar
+                          name={classmate.name}
+                          photoUrl={classmate.photoUrl}
+                          size={10}
+                          className="bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30"
+                        />
                         <div className="flex-1 min-w-0">
                           <p className="font-semibold text-foreground truncate">
                             {classmate.name}

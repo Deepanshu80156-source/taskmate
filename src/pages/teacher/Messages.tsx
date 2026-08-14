@@ -1,7 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import TaskMateAvatar from '@/components/ui/TaskMateAvatar';
-import { MessageCircle, Send, Search, ArrowLeft, RotateCcw, Paperclip, Download, XCircle, FileText } from 'lucide-react';
+import MessageAttachment from '@/components/MessageAttachment';
+import { usePersistentState } from '@/hooks/usePersistentState';
+import { MessageCircle, Send, Search, ArrowLeft, RotateCcw, Paperclip, XCircle, FileText } from 'lucide-react';
 
 // ─── localStorage helpers for "last seen" message tracking ───
 const STORAGE_KEY = 'tm_last_seen';
@@ -25,9 +27,18 @@ function hasUnread(studentId: string, latestMsgId: string | undefined): boolean 
 export default function TeacherMessages() {
   const { currentUser, getStudentsForTeacher, conversations, sendMessage, getSignedNoteUrl } = useAuth();
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeStudentId, setActiveStudentId] = useState<string | null>(null);
-  const [newMessage, setNewMessage] = useState('');
+  const [searchQuery, setSearchQuery] = usePersistentState(
+    `taskmate:messages:search:${currentUser?.id ?? 'guest'}`,
+    '',
+  );
+  const [activeStudentId, setActiveStudentId] = usePersistentState<string | null>(
+    `taskmate:messages:active:${currentUser?.id ?? 'guest'}`,
+    null,
+  );
+  const [newMessage, setNewMessage] = usePersistentState(
+    `taskmate:draft:teacher-message:${currentUser?.id ?? 'guest'}`,
+    '',
+  );
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [sending, setSending] = useState(false);
   const [loadingFileId, setLoadingFileId] = useState<string | null>(null);
@@ -44,9 +55,10 @@ export default function TeacherMessages() {
     const lastA = convA?.messages[convA.messages.length - 1];
     const lastB = convB?.messages[convB.messages.length - 1];
     if (lastA && lastB) {
-      // sort by timestamp string (HH:MM) — approximate; both are same-day for real-time
-      // use message index as tie-break since we don't have full date on Message
-      return convB.messages.length - convA.messages.length;
+      return (
+        new Date(lastB.createdAt ?? 0).getTime() -
+        new Date(lastA.createdAt ?? 0).getTime()
+      );
     }
     if (lastA) return -1;
     if (lastB) return 1;
@@ -260,22 +272,12 @@ export default function TeacherMessages() {
                           {msg.text && <p className="leading-relaxed text-sm">{msg.text}</p>}
                           
                           {msg.attachmentPath && (
-                            <div className="mt-2 bg-white/10 rounded-lg p-2 flex items-center gap-2">
-                              <FileText className="w-4 h-4 shrink-0" />
-                              <span className="text-xs truncate flex-1">{msg.attachmentName}</span>
-                              <button
-                                onClick={() => handleDownload(msg)}
-                                disabled={loadingFileId === msg.id}
-                                className="p-1 hover:bg-white/20 rounded disabled:opacity-50"
-                                title="Download"
-                              >
-                                {loadingFileId === msg.id ? (
-                                  <RotateCcw className="w-3 h-3 animate-spin" />
-                                ) : (
-                                  <Download className="w-3 h-3" />
-                                )}
-                              </button>
-                            </div>
+                            <MessageAttachment
+                              message={msg}
+                              getSignedUrl={getSignedNoteUrl}
+                              onDownload={() => handleDownload(msg)}
+                              loading={loadingFileId === msg.id}
+                            />
                           )}
                           
                           <p className={`text-[10px] mt-1 text-right ${isMine ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>

@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import TaskMateAvatar from '@/components/ui/TaskMateAvatar';
 import { Trophy, Sparkles, TrendingUp } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -121,17 +122,12 @@ export default function StudentLeaderboard() {
               >
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold overflow-hidden shrink-0">
-                      {entry.student.photoUrl ? (
-                        <img
-                          src={entry.student.photoUrl}
-                          alt={entry.student.name}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        entry.student.name.charAt(0)
-                      )}
-                    </div>
+                    <TaskMateAvatar
+                      name={entry.student.name}
+                      photoUrl={entry.student.photoUrl}
+                      size={10}
+                      className="bg-primary/10 text-primary"
+                    />
                     <div>
                       <p className="font-semibold text-foreground">{entry.student.name}</p>
                       <p className="text-sm text-muted-foreground">{entry.student.rollNumber ? `Roll ${entry.student.rollNumber}` : 'Classmate'}</p>

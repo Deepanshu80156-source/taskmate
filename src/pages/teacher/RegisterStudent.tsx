@@ -10,6 +10,7 @@ export default function TeacherRegisterStudent() {
   const [success, setSuccess] = useState(false);
   const [newCreds, setNewCreds] = useState({ username: '', password: '' });
   
+  // Do not persist credentials in browser storage.
   const [formData, setFormData] = useState({
     name: '',
     class: '',
@@ -17,7 +18,7 @@ export default function TeacherRegisterStudent() {
     username: '',
     password: '',
     guardianName: '',
-    guardianPhone: ''
+    guardianPhone: '',
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {

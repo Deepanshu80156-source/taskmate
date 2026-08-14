@@ -3,6 +3,7 @@ import { useAuth } from '@/context/AuthContext';
 import { Upload, FileUp, Save, CheckCircle, FileText, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { CLASS_LIST } from '@/data/constants';
+import { usePersistentState } from '@/hooks/usePersistentState';
 
 export default function TeacherUploadNotes() {
   const { currentUser, addNote, notes, students } = useAuth();
@@ -12,7 +13,10 @@ export default function TeacherUploadNotes() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [notifiedCount, setNotifiedCount] = useState(0);
 
-  const [formData, setFormData] = useState({ class: '', subject: '', chapter: '', description: '' });
+  const [formData, setFormData] = usePersistentState(
+    `taskmate:form:upload-notes:${currentUser?.id ?? 'guest'}`,
+    { class: '', subject: '', chapter: '', description: '' },
+  );
 
   const recentNotes = notes.filter(n => n.teacherId === currentUser?.id).slice(0, 5);
 

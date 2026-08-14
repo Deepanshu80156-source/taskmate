@@ -11,7 +11,7 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       injectRegister: "auto",
-      includeAssets: ["favicon.svg", "icon-192.png", "icon-512.png"],
+      includeAssets: ["icon-192.png", "icon-512.png"],
       manifest: {
         name: "TaskMate – Student Portal",
         short_name: "TaskMate",

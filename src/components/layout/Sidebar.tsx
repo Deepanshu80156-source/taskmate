@@ -16,6 +16,7 @@ import {
   BookMarked
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import TaskMateAvatar from '@/components/ui/TaskMateAvatar';
 
 export function Sidebar({ mobile }: { mobile?: boolean }) {
   const { currentUser, logout } = useAuth();
@@ -46,6 +47,7 @@ export function Sidebar({ mobile }: { mobile?: boolean }) {
     { href: '/teacher/library', label: 'Library', icon: BookMarked },
     { href: '/teacher/upload-results', label: 'Upload Results', icon: BarChart2 },
     { href: '/teacher/results', label: 'Results', icon: BarChart2 },
+    { href: '/teacher/leaderboard', label: 'Leaderboard', icon: Trophy },
     { href: '/teacher/announcements', label: 'Announcements', icon: Megaphone },
     { href: '/teacher/messages', label: 'Messages', icon: MessageCircle },
     { href: '/teacher/settings', label: 'Settings', icon: Settings },
@@ -87,13 +89,12 @@ export function Sidebar({ mobile }: { mobile?: boolean }) {
       
       <div className="p-4 border-t border-sidebar-border">
         <div className="flex items-center gap-3 px-3 py-2 mb-2">
-          {/* Avatar — shows photo if set, otherwise letter initial */}
-          <div className="w-8 h-8 rounded-full bg-sidebar-primary/20 text-sidebar-primary flex items-center justify-center font-bold text-sm shrink-0 overflow-hidden">
-            {currentUser.photoUrl
-              ? <img src={currentUser.photoUrl} alt="" className="w-full h-full object-cover" />
-              : currentUser.name.charAt(0)
-            }
-          </div>
+          <TaskMateAvatar
+            name={currentUser.name}
+            photoUrl={currentUser.photoUrl}
+            size="sm"
+            className="bg-sidebar-primary/20 text-sidebar-primary"
+          />
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-sidebar-primary-foreground truncate">
               {currentUser.name}

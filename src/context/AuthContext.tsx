@@ -210,7 +210,7 @@ function rowToActivity(row: Record<string, unknown>): ActivityItem {
 }
 
 function storageTarget(storagePath: string): {
-  bucket: 'notes' | 'announcements' | 'library' | 'avatars';
+  bucket: 'notes' | 'announcements' | 'library' | 'avatars' | 'message_files';
   path: string;
 } {
   const normalized = storagePath.replace(/^\/+/, '');
@@ -221,7 +221,8 @@ function storageTarget(storagePath: string): {
     first === 'notes' ||
     first === 'announcements' ||
     first === 'library' ||
-    first === 'avatars'
+    first === 'avatars' ||
+    first === 'message_files'
   ) {
     return {
       bucket: first,
@@ -514,13 +515,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const user = rowToUser(asRecord(profile));
       setCurrentUser(user);
 
-      if (user.role === 'teacher') {
-        await loadTeacherData(user.id);
-      } else if (user.teacherId && user.class) {
-        await loadStudentData(user);
-      }
-
+      // Render the authenticated shell as soon as the profile is known. The
+      // larger role-specific datasets hydrate progressively in the background.
       if (mounted) setLoading(false);
+
+      if (user.role === 'teacher') {
+        void loadTeacherData(user.id);
+      } else if (user.teacherId && user.class) {
+        void loadStudentData(user);
+      }
     };
 
     void supabase.auth.getSession().then(({ data: { session } }) => {
@@ -743,10 +746,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     studentId: string,
     newPassword: string,
   ) => {
+    if (!currentUser || currentUser.role !== 'teacher') {
+      return { success: false, error: 'Only teachers can reset student passwords.' };
+    }
+    if (newPassword.length < 8) {
+      return { success: false, error: 'Password must be at least 8 characters.' };
+    }
+    const assignedStudent = students.some(
+      (student) => student.id === studentId && student.teacherId === currentUser.id,
+    );
+    if (!assignedStudent) {
+      return { success: false, error: 'This student is not assigned to you.' };
+    }
+
     const { error } = await supabase.rpc('reset_student_password', {
       student_id: studentId,
       new_password: newPassword,
     });
+
+    if (!error) {
+      await logActivity(currentUser.id, 'password_reset', 'Reset a student password');
+    }
 
     return error
       ? { success: false, error: error.message }
@@ -772,21 +792,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { success: false, error: 'Photo upload failed. Please try again.' };
     }
 
-    const { data: signed, error: signedError } = await supabase.storage
-      .from('avatars')
-      .createSignedUrl(path, 3600);
-
-    if (signedError || !signed?.signedUrl) {
-      await supabase.storage.from('avatars').remove([path]);
-      return {
-        success: false,
-        error: 'The photo was uploaded but could not be displayed.',
-      };
-    }
-
     const { error: profileError } = await supabase
       .from('profiles')
-      .update({ photo_url: signed.signedUrl })
+      // Store the durable storage path. Signed URLs expire and must never be
+      // persisted as profile data.
+      .update({ photo_url: `avatars/${path}` })
       .eq('id', userId);
 
     if (profileError) {
@@ -799,19 +809,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     setCurrentUser((previous) =>
       previous?.id === userId
-        ? { ...previous, photoUrl: signed.signedUrl }
+        ? { ...previous, photoUrl: `avatars/${path}` }
         : previous,
     );
     setStudents((previous) =>
       previous.map((student) =>
         student.id === userId
-          ? { ...student, photoUrl: signed.signedUrl }
+          ? { ...student, photoUrl: `avatars/${path}` }
           : student,
       ),
     );
     setTeacherProfile((previous) =>
       previous?.id === userId
-        ? { ...previous, photoUrl: signed.signedUrl }
+          ? { ...previous, photoUrl: `avatars/${path}` }
         : previous,
     );
 
@@ -1027,14 +1037,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
   };
 
-  const getSignedNoteUrl = async (path: string) => {
+  const getSignedNoteUrl = useCallback(async (path: string) => {
     const target = storageTarget(path);
     const { data, error } = await supabase.storage
       .from(target.bucket)
       .createSignedUrl(target.path, 3600);
 
     return error || !data?.signedUrl ? null : data.signedUrl;
-  };
+  }, []);
 
   const addResult = async (
     result: Omit<ExamResult, 'id' | 'date'>,

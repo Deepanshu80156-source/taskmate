@@ -3,13 +3,23 @@ import { useAuth } from '@/context/AuthContext';
 import { Megaphone, Calendar, Send, CheckCircle, Trash2, Paperclip, XCircle, FileText } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { formatBytes } from '@/lib/fileUpload';
+import { usePersistentState } from '@/hooks/usePersistentState';
 
 export default function TeacherAnnouncements() {
   const { currentUser, announcements, addAnnouncement, removeAnnouncement } = useAuth();
   
-  const [newTitle, setNewTitle] = useState('');
-  const [newContent, setNewContent] = useState('');
-  const [classScope, setClassScope] = useState('All Classes');
+  const [newTitle, setNewTitle] = usePersistentState(
+    `taskmate:form:announcement-title:${currentUser?.id ?? 'guest'}`,
+    '',
+  );
+  const [newContent, setNewContent] = usePersistentState(
+    `taskmate:form:announcement-content:${currentUser?.id ?? 'guest'}`,
+    '',
+  );
+  const [classScope, setClassScope] = usePersistentState(
+    `taskmate:form:announcement-class:${currentUser?.id ?? 'guest'}`,
+    'All Classes',
+  );
   const [isPosting, setIsPosting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
