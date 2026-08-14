@@ -96,7 +96,8 @@ export function buildStoragePath(prefix: string, file: File): string {
   const prefixParts = prefix
     .split('/')
     .map((part) => part.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .filter((part) => part !== 'avatars');
 
   const ownerId = prefixParts[prefixParts.length - 1] || 'user';
 
@@ -114,18 +115,40 @@ export function normalizeAvatarStoragePath(value?: string | null): string | null
   if (!value) return null;
 
   const trimmed = value.trim();
-  if (!trimmed || /^https?:\/\//i.test(trimmed)) {
-    return null;
+  if (!trimmed) return null;
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const url = new URL(trimmed);
+      const pathname = url.pathname.replace(/^\/+/, '');
+      const publicMarker = '/storage/v1/object/public/avatars/';
+      const signedMarker = '/storage/v1/object/sign/avatars/';
+
+      if (pathname.includes(publicMarker)) {
+        const suffix = pathname.slice(pathname.indexOf(publicMarker) + publicMarker.length);
+        return suffix.replace(/^\/+/, '').split('?')[0] || null;
+      }
+
+      if (pathname.includes(signedMarker)) {
+        const suffix = pathname.slice(pathname.indexOf(signedMarker) + signedMarker.length);
+        return suffix.replace(/^\/+/, '').split('?')[0] || null;
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
   }
 
-  const withoutLeading = trimmed.replace(/^\/+/, '').replace(/^avatars\//i, '');
-  const normal = withoutLeading.replace(/^\/+/, '');
+  const withoutPrefix = trimmed
+    .replace(/^\/+/, '')
+    .replace(/^avatars\//i, '')
+    .split('?')[0]
+    .replace(/^\/+/, '');
 
-  if (!normal || normal.startsWith('http://') || normal.startsWith('https://')) {
-    return null;
-  }
+  if (!withoutPrefix) return null;
 
-  return normal.replace(/^avatars\//i, '');
+  return withoutPrefix;
 }
 
 export function formatBytes(bytes: number): string {

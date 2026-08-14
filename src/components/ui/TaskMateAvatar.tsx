@@ -20,6 +20,11 @@ function getAvatarPath(value?: string): string | null {
   return normalizeAvatarStoragePath(value);
 }
 
+function isLikelyExternalImage(value?: string): boolean {
+  if (!value) return false;
+  return /^https?:\/\//i.test(value.trim());
+}
+
 export default function TaskMateAvatar({
   name,
   photoUrl,
@@ -35,6 +40,12 @@ export default function TaskMateAvatar({
   const resolvedSize = typeof size === 'number' ? size : sizeMap[size];
   const dim = typeof size === 'number' ? '' : `w-${resolvedSize} h-${resolvedSize}`;
   const avatarPath = useMemo(() => getAvatarPath(photoUrl), [photoUrl]);
+  const directExternalUrl = useMemo(() => {
+    if (!photoUrl) return null;
+    const trimmed = photoUrl.trim();
+    if (!isLikelyExternalImage(trimmed)) return null;
+    return normalizeAvatarStoragePath(trimmed) ? null : trimmed;
+  }, [photoUrl]);
 
   useEffect(() => {
     let cancelled = false;
@@ -42,8 +53,9 @@ export default function TaskMateAvatar({
     const fetchSignedUrl = async () => {
       if (!avatarPath) {
         if (!cancelled) {
-          setResolvedPhotoUrl(null);
+          setResolvedPhotoUrl(directExternalUrl ?? null);
           setIsLoading(false);
+          retryRef.current = false;
         }
         return;
       }
@@ -83,11 +95,11 @@ export default function TaskMateAvatar({
     return () => {
       cancelled = true;
     };
-  }, [avatarPath]);
+  }, [avatarPath, directExternalUrl]);
 
   const handleImageError = async () => {
     if (!avatarPath) {
-      setResolvedPhotoUrl(null);
+      setResolvedPhotoUrl(directExternalUrl ?? null);
       return;
     }
 

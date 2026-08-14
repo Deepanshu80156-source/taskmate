@@ -8,7 +8,7 @@ import React, {
   type ReactNode,
 } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase';
+import { createIsolatedSupabaseClient, supabase } from '@/lib/supabase';
 import {
   AVATAR_ALLOWED_MIME_TYPES,
   AVATAR_MAX_BYTES,
@@ -113,6 +113,11 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const PROFILE_PUBLIC_SELECT =
+  'id, name, username, role, class, roll_number, teacher_id, photo_url';
+const PROFILE_PRIVATE_SELECT =
+  'id, name, username, role, class, roll_number, guardian_name, guardian_phone, teacher_id, photo_url';
 
 const toEmail = (username: string) =>
   `${username.trim().toLowerCase()}@taskmate.app`;
@@ -342,7 +347,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ] = await Promise.all([
         supabase
           .from('profiles')
-          .select('*')
+          .select(PROFILE_PUBLIC_SELECT)
           .eq('teacher_id', teacherId)
           .eq('role', 'student'),
         supabase
@@ -439,7 +444,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .order('created_at', { ascending: false }),
         supabase
           .from('profiles')
-          .select('*')
+          .select(PROFILE_PUBLIC_SELECT)
           .eq('id', student.teacherId)
           .maybeSingle(),
         supabase
@@ -449,7 +454,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .order('created_at', { ascending: false }),
         supabase
           .from('profiles')
-          .select('*')
+          .select(PROFILE_PUBLIC_SELECT)
           .eq('teacher_id', student.teacherId)
           .eq('class', student.class)
           .eq('role', 'student'),
@@ -511,7 +516,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const generation = ++loadVersionRef.current;
       const { data: profile } = await supabase
         .from('profiles')
-        .select('*')
+        .select(PROFILE_PRIVATE_SELECT)
         .eq('id', session.user.id)
         .maybeSingle();
 
@@ -888,69 +893,92 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const addStudent = async (
     student: Omit<User, 'id' | 'role'> & { password: string },
   ) => {
-    const username = student.username.trim().toLowerCase();
+    if (!currentUser || currentUser.role !== 'teacher') {
+      return { success: false, error: 'Only a teacher can create a student account.' };
+    }
+
+    const normalizedUsername = student.username.trim().toLowerCase();
+    const safeName = student.name.trim();
+    const safeClass = student.class?.trim() ?? '';
+    const normalizedRoll = student.rollNumber?.trim() ?? '';
+    const guardianName = student.guardianName?.trim() ?? '';
+    const guardianPhone = student.guardianPhone?.trim() ?? '';
+
+    if (!safeName || !normalizedUsername || !safeClass || !student.password.trim()) {
+      return { success: false, error: 'Please complete all required student fields.' };
+    }
+    if (student.password.length < 8) {
+      return { success: false, error: 'Student password must be at least 8 characters.' };
+    }
+
+    const teacherSessionBefore = await supabase.auth.getSession();
+    if (!teacherSessionBefore.data.session || teacherSessionBefore.data.session.user.id !== currentUser.id) {
+      return { success: false, error: 'Teacher session is no longer active.' };
+    }
+
     const { data: existing } = await supabase
       .from('profiles')
       .select('id')
-      .eq('username', username)
+      .eq('username', normalizedUsername)
       .maybeSingle();
 
     if (existing) {
       return { success: false, error: 'This username is already taken.' };
     }
 
-    const { data, error } = await supabase.auth.signUp({
-      email: toEmail(username),
+    const isolatedClient = createIsolatedSupabaseClient();
+    const { data: authData, error: signUpError } = await isolatedClient.auth.signUp({
+      email: toEmail(normalizedUsername),
       password: student.password,
     });
 
-    if (error || !data.user) {
+    if (signUpError || !authData.user) {
       return {
         success: false,
-        error: error?.message ?? 'Could not create student account.',
+        error: signUpError?.message ?? 'Could not create student account.',
       };
     }
 
-    const { error: profileError } = await supabase.from('profiles').insert({
-      id: data.user.id,
-      name: student.name.trim(),
-      username,
-      role: 'student',
-      class: student.class ?? null,
-      roll_number: student.rollNumber ?? null,
-      guardian_name: student.guardianName ?? null,
-      guardian_phone: student.guardianPhone ?? null,
-      teacher_id: student.teacherId ?? null,
+    const { error: rpcError } = await supabase.rpc('create_student_profile', {
+      p_student_id: authData.user.id,
+      p_name: safeName,
+      p_username: normalizedUsername,
+      p_class: safeClass,
+      p_roll_number: normalizedRoll || null,
+      p_guardian_name: guardianName || null,
+      p_guardian_phone: guardianPhone || null,
     });
 
-    if (profileError) {
-      if (data.user?.id) {
-        await supabase.auth.admin.deleteUser(data.user.id);
-      }
-      return { success: false, error: profileError.message };
+    if (rpcError) {
+      return {
+        success: false,
+        error: `Student account creation did not complete: ${rpcError.message}. The Auth user may need manual cleanup in Supabase.`,
+      };
+    }
+
+    const teacherSessionAfter = await supabase.auth.getSession();
+    if (!teacherSessionAfter.data.session || teacherSessionAfter.data.session.user.id !== currentUser.id) {
+      return {
+        success: false,
+        error: 'The teacher session changed during registration. Please sign back in and retry.',
+      };
     }
 
     const newStudent: User = {
-      id: data.user.id,
-      name: student.name.trim(),
-      username,
+      id: authData.user.id,
+      name: safeName,
+      username: normalizedUsername,
       role: 'student',
-      class: student.class,
-      rollNumber: student.rollNumber,
-      guardianName: student.guardianName,
-      guardianPhone: student.guardianPhone,
-      teacherId: student.teacherId,
+      class: safeClass,
+      rollNumber: normalizedRoll || undefined,
+      guardianName: guardianName || undefined,
+      guardianPhone: guardianPhone || undefined,
+      teacherId: currentUser.id,
     };
 
     setStudents((previous) => [...previous, newStudent]);
 
-    if (student.teacherId) {
-      await logActivity(
-        student.teacherId,
-        'student_registered',
-        `Registered ${student.name}`,
-      );
-    }
+    await logActivity(currentUser.id, 'student_registered', `Registered ${safeName}`);
 
     return { success: true };
   };
