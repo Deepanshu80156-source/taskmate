@@ -1,5 +1,6 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { normalizeAvatarStoragePath } from '@/lib/fileUpload';
 
 interface TaskMateAvatarProps {
   name: string;
@@ -16,13 +17,7 @@ const sizeMap = {
 };
 
 function getAvatarPath(value?: string): string | null {
-  if (!value) return null;
-  // If it's already a full URL, return null (we'll use it directly)
-  if (/^https?:\/\//i.test(value)) {
-    return null;
-  }
-  // Extract the path, removing 'avatars/' prefix if present
-  return value.replace(/^\/+/, '').replace(/^avatars\//, '');
+  return normalizeAvatarStoragePath(value);
 }
 
 export default function TaskMateAvatar({
@@ -34,66 +29,95 @@ export default function TaskMateAvatar({
 }: TaskMateAvatarProps) {
   const [resolvedPhotoUrl, setResolvedPhotoUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  
+  const retryRef = useRef(false);
+  const signedUrlCacheRef = useRef<Map<string, { url: string; expiresAt: number }>>(new Map());
+
   const resolvedSize = typeof size === 'number' ? size : sizeMap[size];
   const dim = typeof size === 'number' ? '' : `w-${resolvedSize} h-${resolvedSize}`;
-  
-  // Determine if this is a storage path or direct URL
-  const isDirectUrl = photoUrl && /^https?:\/\//i.test(photoUrl);
   const avatarPath = useMemo(() => getAvatarPath(photoUrl), [photoUrl]);
 
-  // Load photo URL when photoUrl prop changes
   useEffect(() => {
     let cancelled = false;
 
-    // No photo URL provided
-    if (!photoUrl) {
-      setResolvedPhotoUrl(null);
-      setIsLoading(false);
-      return;
-    }
-
-    // Direct URL (already signed or public)
-    if (isDirectUrl) {
-      setResolvedPhotoUrl(photoUrl);
-      setIsLoading(false);
-      return;
-    }
-
-    // Need to get signed URL from storage
-    if (!avatarPath) {
-      setResolvedPhotoUrl(null);
-      setIsLoading(false);
-      return;
-    }
-
-    setIsLoading(true);
-    void supabase.storage
-      .from('avatars')
-      .createSignedUrl(avatarPath, 3600)
-      .then(({ data, error }) => {
-        if (!cancelled) {
-          if (!error && data?.signedUrl) {
-            setResolvedPhotoUrl(data.signedUrl);
-          } else {
-            setResolvedPhotoUrl(null);
-          }
-          setIsLoading(false);
-        }
-      })
-      .catch(() => {
+    const fetchSignedUrl = async () => {
+      if (!avatarPath) {
         if (!cancelled) {
           setResolvedPhotoUrl(null);
           setIsLoading(false);
         }
-      });
+        return;
+      }
+
+      const cached = signedUrlCacheRef.current.get(avatarPath);
+      const now = Date.now();
+      if (cached && cached.expiresAt > now + 60_000) {
+        if (!cancelled) {
+          setResolvedPhotoUrl(cached.url);
+          setIsLoading(false);
+        }
+        return;
+      }
+
+      setIsLoading(true);
+      const { data, error } = await supabase.storage
+        .from('avatars')
+        .createSignedUrl(avatarPath, 3600);
+
+      if (cancelled) return;
+
+      if (!error && data?.signedUrl) {
+        signedUrlCacheRef.current.set(avatarPath, {
+          url: data.signedUrl,
+          expiresAt: Date.now() + 3_500_000,
+        });
+        setResolvedPhotoUrl(data.signedUrl);
+      } else {
+        setResolvedPhotoUrl(null);
+      }
+      setIsLoading(false);
+      retryRef.current = false;
+    };
+
+    void fetchSignedUrl();
 
     return () => {
       cancelled = true;
     };
-  }, [photoUrl, isDirectUrl, avatarPath]);
+  }, [avatarPath]);
 
-  // Show image if we have a resolved URL, otherwise show fallback
+  const handleImageError = async () => {
+    if (!avatarPath) {
+      setResolvedPhotoUrl(null);
+      return;
+    }
+
+    if (retryRef.current) {
+      setResolvedPhotoUrl(null);
+      return;
+    }
+
+    retryRef.current = true;
+    const cached = signedUrlCacheRef.current.get(avatarPath);
+    if (cached) {
+      signedUrlCacheRef.current.delete(avatarPath);
+    }
+
+    const { data, error } = await supabase.storage
+      .from('avatars')
+      .createSignedUrl(avatarPath, 3600);
+
+    if (!error && data?.signedUrl) {
+      signedUrlCacheRef.current.set(avatarPath, {
+        url: data.signedUrl,
+        expiresAt: Date.now() + 3_500_000,
+      });
+      setResolvedPhotoUrl(data.signedUrl);
+      return;
+    }
+
+    setResolvedPhotoUrl(null);
+  };
+
   const showImage = Boolean(resolvedPhotoUrl) && !isLoading;
 
   return (
@@ -108,7 +132,7 @@ export default function TaskMateAvatar({
           alt={name}
           className="w-full h-full object-cover bg-secondary"
           loading="lazy"
-          onError={() => setResolvedPhotoUrl(null)}
+          onError={handleImageError}
         />
       ) : (
         <div className={`w-full h-full rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm shrink-0 ${fallbackClassName}`}>

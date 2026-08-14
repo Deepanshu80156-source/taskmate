@@ -43,7 +43,7 @@ export default function LoginPage() {
     setError('');
     if (!name.trim() || !username.trim() || !password.trim() || !confirmPassword.trim()) { setError('Please fill in all fields.'); return; }
     if (password !== confirmPassword) { setError('Passwords do not match.'); return; }
-    if (password.length < 6) { setError('Password must be at least 6 characters.'); return; }
+    if (password.length < 8) { setError('Password must be at least 8 characters.'); return; }
     setBusy(true);
     const result = await registerTeacher(name, username, password);
     setBusy(false);
@@ -120,7 +120,7 @@ export default function LoginPage() {
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-foreground ml-1">Password</label>
                 <div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground pointer-events-none" />
-                  <input type="password" value={password} onChange={e => setPassword(e.target.value)} className={inputCls} placeholder="Choose a password (min. 6 chars)" autoComplete="new-password" /></div>
+                  <input type="password" value={password} onChange={e => setPassword(e.target.value)} className={inputCls} placeholder="Choose a password (min. 8 chars)" autoComplete="new-password" /></div>
               </div>
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-foreground ml-1">Confirm Password</label>

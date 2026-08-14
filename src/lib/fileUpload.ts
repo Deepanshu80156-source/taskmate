@@ -1,4 +1,6 @@
 export const DEFAULT_MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+export const AVATAR_ALLOWED_MIME_TYPES = ['image/png', 'image/jpeg', 'image/jpg'];
+export const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
 
 type FileValidationOptions = {
   allowedMimeTypes?: string[];
@@ -106,6 +108,24 @@ export function buildStoragePath(prefix: string, file: File): string {
       : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
   return `${ownerId}/${uniqueId}-${filename}`;
+}
+
+export function normalizeAvatarStoragePath(value?: string | null): string | null {
+  if (!value) return null;
+
+  const trimmed = value.trim();
+  if (!trimmed || /^https?:\/\//i.test(trimmed)) {
+    return null;
+  }
+
+  const withoutLeading = trimmed.replace(/^\/+/, '').replace(/^avatars\//i, '');
+  const normal = withoutLeading.replace(/^\/+/, '');
+
+  if (!normal || normal.startsWith('http://') || normal.startsWith('https://')) {
+    return null;
+  }
+
+  return normal.replace(/^avatars\//i, '');
 }
 
 export function formatBytes(bytes: number): string {

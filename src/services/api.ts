@@ -1,43 +1,28 @@
 /**
  * TaskMate API Client
- * ─────────────────────────────────────────────────────────────────────────────
- * This file is the SINGLE place you need to touch to connect a real backend.
  *
- * Current state  : All service calls are handled by the in-memory AuthContext.
- *                  This file is a prepared stub.
- *
- * Future state   : Replace `BASE_URL` with your deployed server URL.
- *                  Implement `apiRequest` so it attaches the JWT from
- *                  localStorage and talks to the real API.
- *                  Then update each service file to call `apiRequest` instead
- *                  of delegating to the context.
- *
- * Architecture contract
- *   Teacher → App → [this file] → Backend → DB / Cloud Storage
- *   Student → App → [this file] → Backend → permission check → data returned
- *   The teacher's device is NEVER the server. All data lives in the cloud.
- * ─────────────────────────────────────────────────────────────────────────────
+ * This app uses the existing Supabase session for all authenticated requests.
+ * The bearer-token localStorage stub is intentionally removed because it is not
+ * used and it creates an unsafe duplicate authentication path.
  */
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL ?? '';
 
-// Token helpers — swap localStorage key to match your auth provider
-export const getToken = (): string | null => localStorage.getItem('taskmate_token');
-export const setToken = (token: string) => localStorage.setItem('taskmate_token', token);
-export const clearToken = () => localStorage.removeItem('taskmate_token');
-
-/** Base HTTP helper — currently unused (mock mode). Enable when backend is live. */
+/**
+ * Current app behavior: all auth-sensitive operations are handled through the
+ * active Supabase session in AuthContext and Supabase client calls.
+ * This helper remains available for future backend integration without using
+ * localStorage tokens.
+ */
 export async function apiRequest<T>(
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   body?: unknown,
 ): Promise<T> {
-  const token = getToken();
   const res = await fetch(`${API_BASE_URL}${path}`, {
     method,
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });

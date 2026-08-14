@@ -3,12 +3,19 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
-import { buildStoragePath, validateUploadFile } from '@/lib/fileUpload';
+import {
+  AVATAR_ALLOWED_MIME_TYPES,
+  AVATAR_MAX_BYTES,
+  buildStoragePath,
+  normalizeAvatarStoragePath,
+  validateUploadFile,
+} from '@/lib/fileUpload';
 import {
   type ActivityItem,
   type ActivityType,
@@ -273,6 +280,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [teacherProfile, setTeacherProfile] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const loadVersionRef = useRef(0);
   const [students, setStudents] = useState<User[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [results, setResults] = useState<ExamResult[]>([]);
@@ -500,13 +508,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let loadTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
     const handleSession = async (session: Session) => {
+      const generation = ++loadVersionRef.current;
       const { data: profile } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', session.user.id)
         .maybeSingle();
 
-      if (!mounted) return;
+      if (!mounted || generation !== loadVersionRef.current) return;
 
       if (!profile) {
         setLoading(false);
@@ -515,14 +524,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const user = rowToUser(asRecord(profile));
       setCurrentUser(user);
+      setTeacherProfile((previous) => (previous?.id === user.id ? previous : previous));
 
-      // Render the authenticated shell as soon as the profile is known
       if (mounted) setLoading(false);
 
-      // Load data after a short delay to avoid cascade re-renders
-      // and to prioritize showing the UI first
       loadTimeoutId = setTimeout(async () => {
-        if (!mounted) return;
+        if (!mounted || generation !== loadVersionRef.current) return;
         if (user.role === 'teacher') {
           await loadTeacherData(user.id);
         } else if (user.teacherId && user.class) {
@@ -542,9 +549,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
+      loadVersionRef.current += 1;
       if (session?.user) {
-        // Don't set loading to true on subsequent auth state changes
-        // to avoid refreshing the UI unnecessarily
         void handleSession(session);
       } else {
         setCurrentUser(null);
@@ -674,6 +680,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
+    setCurrentUser(null);
+    setTeacherProfile(null);
+    setStudents([]);
+    setNotes([]);
+    setResults([]);
+    setAnnouncements([]);
+    setConversations([]);
+    setNotifications([]);
+    setLibrary([]);
+    setActivityLog([]);
+    loadVersionRef.current += 1;
     await supabase.auth.signOut();
   };
 
@@ -727,10 +744,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     newPassword: string,
   ) => {
     if (!currentUser) return { success: false, error: 'Not logged in.' };
-    if (newPassword.length < 6) {
+    if (newPassword.length < 8) {
       return {
         success: false,
-        error: 'New password must be at least 6 characters.',
+        error: 'New password must be at least 8 characters.',
       };
     }
 
@@ -785,58 +802,87 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const updateUserPhoto = async (userId: string, file: File) => {
+    if (!currentUser) return { success: false, error: 'You are not signed in.' };
+
+    const authenticatedUserId = currentUser.id;
+    if (userId !== authenticatedUserId) {
+      return { success: false, error: 'You can only update your own profile photo.' };
+    }
+
     const validation = validateUploadFile(file, {
-      allowedMimeTypes: ['image/png', 'image/jpeg', 'image/jpg'],
-      maxBytes: 2 * 1024 * 1024,
+      allowedMimeTypes: AVATAR_ALLOWED_MIME_TYPES,
+      maxBytes: AVATAR_MAX_BYTES,
     });
 
     if (!validation.valid) {
       return { success: false, error: validation.error };
     }
 
-    const path = buildStoragePath(`avatars/${userId}`, file);
-    const { error: uploadError } = await supabase.storage
-      .from('avatars')
-      .upload(path, file, { contentType: file.type, upsert: false });
+    const oldPath = normalizeAvatarStoragePath(currentUser.photoUrl ?? teacherProfile?.photoUrl ?? null);
+    const nextPath = buildStoragePath(`avatars/${authenticatedUserId}`, file);
+    const durablePath = `avatars/${nextPath}`;
 
-    if (uploadError) {
-      return { success: false, error: 'Photo upload failed. Please try again.' };
-    }
+    try {
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(nextPath, file, { contentType: file.type, upsert: false });
 
-    const { error: profileError } = await supabase
-      .from('profiles')
-      // Store the durable storage path. Signed URLs expire and must never be
-      // persisted as profile data.
-      .update({ photo_url: `avatars/${path}` })
-      .eq('id', userId);
+      if (uploadError) {
+        return { success: false, error: 'Photo upload failed. Please try again.' };
+      }
 
-    if (profileError) {
-      await supabase.storage.from('avatars').remove([path]);
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({ photo_url: durablePath })
+        .eq('id', authenticatedUserId);
+
+      if (profileError) {
+        await supabase.storage.from('avatars').remove([nextPath]);
+        return {
+          success: false,
+          error: 'Could not save the photo to your profile.',
+        };
+      }
+
+      const normalizedValue = normalizeAvatarStoragePath(durablePath);
+      const updatedPhotoUrl = normalizedValue ?? durablePath;
+
+      setCurrentUser((previous) =>
+        previous?.id === authenticatedUserId
+          ? { ...previous, photoUrl: updatedPhotoUrl }
+          : previous,
+      );
+      setTeacherProfile((previous) =>
+        previous?.id === authenticatedUserId
+          ? { ...previous, photoUrl: updatedPhotoUrl }
+          : previous,
+      );
+      setStudents((previous) =>
+        previous.map((student) =>
+          student.id === authenticatedUserId
+            ? { ...student, photoUrl: updatedPhotoUrl }
+            : student,
+        ),
+      );
+
+      if (oldPath) {
+        const { error: cleanupError } = await supabase.storage
+          .from('avatars')
+          .remove([oldPath]);
+
+        if (cleanupError) {
+          console.warn('Avatar cleanup failed after profile update.', cleanupError);
+        }
+      }
+
+      return { success: true };
+    } catch (error) {
+      await supabase.storage.from('avatars').remove([nextPath]);
       return {
         success: false,
-        error: 'Could not save the photo to your profile.',
+        error: error instanceof Error ? error.message : 'Photo upload failed. Please try again.',
       };
     }
-
-    setCurrentUser((previous) =>
-      previous?.id === userId
-        ? { ...previous, photoUrl: `avatars/${path}` }
-        : previous,
-    );
-    setStudents((previous) =>
-      previous.map((student) =>
-        student.id === userId
-          ? { ...student, photoUrl: `avatars/${path}` }
-          : student,
-      ),
-    );
-    setTeacherProfile((previous) =>
-      previous?.id === userId
-          ? { ...previous, photoUrl: `avatars/${path}` }
-        : previous,
-    );
-
-    return { success: true };
   };
 
   const addStudent = async (
@@ -852,10 +898,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (existing) {
       return { success: false, error: 'This username is already taken.' };
     }
-
-    const {
-      data: { session: teacherSession },
-    } = await supabase.auth.getSession();
 
     const { data, error } = await supabase.auth.signUp({
       email: toEmail(username),
@@ -881,14 +923,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       teacher_id: student.teacherId ?? null,
     });
 
-    if (teacherSession) {
-      await supabase.auth.setSession({
-        access_token: teacherSession.access_token,
-        refresh_token: teacherSession.refresh_token,
-      });
-    }
-
     if (profileError) {
+      if (data.user?.id) {
+        await supabase.auth.admin.deleteUser(data.user.id);
+      }
       return { success: false, error: profileError.message };
     }
 

@@ -14,6 +14,7 @@ export default function TeacherSettings() {
   const [confirmPw, setConfirmPw] = useState('');
   const [pwStatus, setPwStatus] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
   const [photoStatus, setPhotoStatus] = useState<string | null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const photoInputRef = useRef<HTMLInputElement>(null);
 
   const handleChangePassword = async (e: React.FormEvent) => {
@@ -22,8 +23,8 @@ export default function TeacherSettings() {
       setPwStatus({ type: 'error', msg: 'New passwords do not match.' });
       return;
     }
-    if (newPw.length < 6) {
-      setPwStatus({ type: 'error', msg: 'New password must be at least 6 characters.' });
+    if (newPw.length < 8) {
+      setPwStatus({ type: 'error', msg: 'New password must be at least 8 characters.' });
       return;
     }
     if (!currentUser) return;
@@ -39,7 +40,8 @@ export default function TeacherSettings() {
 
   const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !currentUser) return;
+    if (!file || !currentUser || uploadingPhoto) return;
+    setUploadingPhoto(true);
     setPhotoStatus('Uploading photo...');
     const result = await updateUserPhoto(currentUser.id, file);
     if (result.success) {
@@ -47,6 +49,8 @@ export default function TeacherSettings() {
     } else {
       setPhotoStatus(result.error ?? 'Photo upload failed.');
     }
+    if (e.target) e.target.value = '';
+    setUploadingPhoto(false);
     setTimeout(() => setPhotoStatus(null), 3000);
   };
 
@@ -81,21 +85,25 @@ export default function TeacherSettings() {
                 </div>
                 <button
                   type="button"
+                  aria-label="Change profile photo"
+                  disabled={uploadingPhoto}
                   onClick={() => photoInputRef.current?.click()}
-                  className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                  className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                   title="Change photo"
                 >
                   <Camera className="w-5 h-5 text-white" />
                 </button>
-                <input ref={photoInputRef} type="file" accept="image/*" className="sr-only" onChange={handlePhotoChange} />
+                <input ref={photoInputRef} type="file" accept="image/png,image/jpeg,image/jpg" className="sr-only" onChange={handlePhotoChange} disabled={uploadingPhoto} aria-label="Upload profile photo" />
               </div>
               <div>
                 <h3 className="text-xl font-bold text-foreground">{currentUser?.name}</h3>
                 <p className="text-muted-foreground text-sm">Administrator · Head Teacher</p>
                 <button
                   type="button"
+                  aria-label="Change profile photo"
+                  disabled={uploadingPhoto}
                   onClick={() => photoInputRef.current?.click()}
-                  className="mt-2 text-xs text-primary hover:underline"
+                  className="mt-2 text-xs text-primary hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Change profile photo
                 </button>
