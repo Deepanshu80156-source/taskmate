@@ -497,6 +497,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true;
+    let loadTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
     const handleSession = async (session: Session) => {
       const { data: profile } = await supabase
@@ -515,15 +516,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const user = rowToUser(asRecord(profile));
       setCurrentUser(user);
 
-      // Render the authenticated shell as soon as the profile is known. The
-      // larger role-specific datasets hydrate progressively in the background.
+      // Render the authenticated shell as soon as the profile is known
       if (mounted) setLoading(false);
 
-      if (user.role === 'teacher') {
-        void loadTeacherData(user.id);
-      } else if (user.teacherId && user.class) {
-        void loadStudentData(user);
-      }
+      // Load data after a short delay to avoid cascade re-renders
+      // and to prioritize showing the UI first
+      loadTimeoutId = setTimeout(async () => {
+        if (!mounted) return;
+        if (user.role === 'teacher') {
+          await loadTeacherData(user.id);
+        } else if (user.teacherId && user.class) {
+          await loadStudentData(user);
+        }
+      }, 500);
     };
 
     void supabase.auth.getSession().then(({ data: { session } }) => {
@@ -538,7 +543,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
-        setLoading(true);
+        // Don't set loading to true on subsequent auth state changes
+        // to avoid refreshing the UI unnecessarily
         void handleSession(session);
       } else {
         setCurrentUser(null);
@@ -551,13 +557,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setNotifications([]);
         setLibrary([]);
         setActivityLog([]);
-        setLoading(false);
       }
     });
 
     return () => {
       mounted = false;
       subscription.unsubscribe();
+      if (loadTimeoutId) clearTimeout(loadTimeoutId);
     };
   }, [loadStudentData, loadTeacherData]);
 
@@ -566,6 +572,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const userId = currentUser.id;
     const role = currentUser.role;
+    let messageLoadTimeoutId: ReturnType<typeof setTimeout> | null = null;
+    let notificationChannel: ReturnType<typeof supabase.channel> | null = null;
 
     const messageChannel = supabase
       .channel(`messages-${userId}`)
@@ -573,12 +581,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages' },
         () => {
-          void loadConversations(userId, role);
+          // Debounce conversation reload to prevent excessive updates
+          if (messageLoadTimeoutId) clearTimeout(messageLoadTimeoutId);
+          messageLoadTimeoutId = setTimeout(() => {
+            void loadConversations(userId, role);
+          }, 300);
         },
       )
       .subscribe();
-
-    let notificationChannel: ReturnType<typeof supabase.channel> | null = null;
 
     if (role === 'student') {
       notificationChannel = supabase
@@ -604,6 +614,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     return () => {
+      if (messageLoadTimeoutId) clearTimeout(messageLoadTimeoutId);
       void messageChannel.unsubscribe();
       if (notificationChannel) void notificationChannel.unsubscribe();
     };

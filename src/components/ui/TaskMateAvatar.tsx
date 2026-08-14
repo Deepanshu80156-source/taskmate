@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 
 interface TaskMateAvatarProps {
@@ -17,20 +17,12 @@ const sizeMap = {
 
 function getAvatarPath(value?: string): string | null {
   if (!value) return null;
-  if (!/^https?:\/\//i.test(value)) {
-    return value.replace(/^\/+/, '').replace(/^avatars\//, '');
-  }
-
-  try {
-    const url = new URL(value);
-    const marker = '/storage/v1/object/sign/avatars/';
-    const markerIndex = url.pathname.indexOf(marker);
-    return markerIndex === -1
-      ? null
-      : decodeURIComponent(url.pathname.slice(markerIndex + marker.length));
-  } catch {
+  // If it's already a full URL, return null (we'll use it directly)
+  if (/^https?:\/\//i.test(value)) {
     return null;
   }
+  // Extract the path, removing 'avatars/' prefix if present
+  return value.replace(/^\/+/, '').replace(/^avatars\//, '');
 }
 
 export default function TaskMateAvatar({
@@ -40,64 +32,83 @@ export default function TaskMateAvatar({
   className = '',
   fallbackClassName = '',
 }: TaskMateAvatarProps) {
-  const [imageError, setImageError] = useState(false);
   const [resolvedPhotoUrl, setResolvedPhotoUrl] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  
   const resolvedSize = typeof size === 'number' ? size : sizeMap[size];
   const dim = typeof size === 'number' ? '' : `w-${resolvedSize} h-${resolvedSize}`;
-  const avatarPath = getAvatarPath(photoUrl);
+  
+  // Determine if this is a storage path or direct URL
+  const isDirectUrl = photoUrl && /^https?:\/\//i.test(photoUrl);
+  const avatarPath = useMemo(() => getAvatarPath(photoUrl), [photoUrl]);
 
+  // Load photo URL when photoUrl prop changes
   useEffect(() => {
     let cancelled = false;
-    setImageError(false);
-    setResolvedPhotoUrl(null);
 
-    if (!photoUrl) return () => { cancelled = true; };
-    if (/^https?:\/\//i.test(photoUrl)) {
-      setResolvedPhotoUrl(photoUrl);
-      return () => { cancelled = true; };
+    // No photo URL provided
+    if (!photoUrl) {
+      setResolvedPhotoUrl(null);
+      setIsLoading(false);
+      return;
     }
-    if (!avatarPath) return () => { cancelled = true; };
 
+    // Direct URL (already signed or public)
+    if (isDirectUrl) {
+      setResolvedPhotoUrl(photoUrl);
+      setIsLoading(false);
+      return;
+    }
+
+    // Need to get signed URL from storage
+    if (!avatarPath) {
+      setResolvedPhotoUrl(null);
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
     void supabase.storage
       .from('avatars')
       .createSignedUrl(avatarPath, 3600)
       .then(({ data, error }) => {
-        if (!cancelled && !error && data?.signedUrl) {
-          setResolvedPhotoUrl(data.signedUrl);
+        if (!cancelled) {
+          if (!error && data?.signedUrl) {
+            setResolvedPhotoUrl(data.signedUrl);
+          } else {
+            setResolvedPhotoUrl(null);
+          }
+          setIsLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setResolvedPhotoUrl(null);
+          setIsLoading(false);
         }
       });
 
-    return () => { cancelled = true; };
-  }, [avatarPath, photoUrl]);
+    return () => {
+      cancelled = true;
+    };
+  }, [photoUrl, isDirectUrl, avatarPath]);
 
-  const refreshPhoto = () => {
-    setImageError(true);
-    if (!avatarPath) return;
-    void supabase.storage
-      .from('avatars')
-      .createSignedUrl(avatarPath, 3600)
-      .then(({ data, error }) => {
-        if (!error && data?.signedUrl) {
-          setImageError(false);
-          setResolvedPhotoUrl(data.signedUrl);
-        }
-      });
-  };
-
-  const shouldRenderImage = Boolean(resolvedPhotoUrl) && !imageError;
+  // Show image if we have a resolved URL, otherwise show fallback
+  const showImage = Boolean(resolvedPhotoUrl) && !isLoading;
 
   return (
     <div
       className={`${dim} rounded-full overflow-hidden shrink-0 ${className}`}
       style={typeof size === 'number' ? { width: `${resolvedSize * 4}px`, height: `${resolvedSize * 4}px` } : undefined}
+      title={name}
     >
-      {shouldRenderImage ? (
+      {showImage && resolvedPhotoUrl ? (
         <img
-          src={resolvedPhotoUrl ?? undefined}
+          src={resolvedPhotoUrl}
           alt={name}
-          className="w-full h-full object-cover"
+          className="w-full h-full object-cover bg-secondary"
           loading="lazy"
-          onError={refreshPhoto}
+          onError={() => setResolvedPhotoUrl(null)}
         />
       ) : (
         <div className={`w-full h-full rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm shrink-0 ${fallbackClassName}`}>
