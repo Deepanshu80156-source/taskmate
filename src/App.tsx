@@ -31,6 +31,7 @@ import TeacherAnnouncements from '@/pages/teacher/Announcements';
 import TeacherMessages from '@/pages/teacher/Messages';
 import TeacherSettings from '@/pages/teacher/Settings';
 import TeacherLibrary from '@/pages/teacher/Library';
+import TeacherApprovals from '@/pages/teacher/Approvals';
 
 const queryClient = new QueryClient();
 
@@ -110,6 +111,7 @@ function AppRouter() {
         <Route path="/teacher/messages"          component={() => <ProtectedRoute component={TeacherMessages}        roleRequired="teacher" />} />
         <Route path="/teacher/settings"          component={() => <ProtectedRoute component={TeacherSettings}        roleRequired="teacher" />} />
         <Route path="/teacher/library"           component={() => <ProtectedRoute component={TeacherLibrary}         roleRequired="teacher" />} />
+         <Route path="/teacher/approvals"         component={() => <ProtectedRoute component={TeacherApprovals}       roleRequired="teacher" />} />
         <Route component={NotFound} />
       </Switch>
     </>
