@@ -11,6 +11,17 @@ export interface User {
   username: string;
   teacherId?: string;
   photoUrl?: string;
+  approvalStatus?: 'pending' | 'approved' | 'denied';
+}
+
+export interface TeacherApprovalRequest {
+  id: string;
+  teacherId: string;
+  teacherName: string;
+  username: string;
+  status: 'pending' | 'approved' | 'denied';
+  createdAt: string;
+  reviewedAt?: string;
 }
 
 export interface Note {
