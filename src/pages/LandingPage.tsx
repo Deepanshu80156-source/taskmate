@@ -57,7 +57,7 @@ const features = [
 ];
 
 const steps = [
-  { num: '01', title: 'Teacher registers', desc: 'Create your account in seconds and set up your institute.' },
+  { num: '01', title: 'Teacher registers', desc: 'Create your account, then wait for administrator approval.' },
   { num: '02', title: 'Add students', desc: 'Register each student with their class, roll number, and login.' },
   { num: '03', title: 'Share everything', desc: 'Upload notes, publish results, send messages — all in one place.' },
   { num: '04', title: 'Students stay updated', desc: 'Notifications keep students informed the moment anything changes.' },
@@ -77,7 +77,7 @@ export default function LandingPage() {
       {/* ── Nav ── */}
       <header className="px-6 py-5 flex items-center justify-between max-w-6xl mx-auto w-full">
         <div className="flex items-center gap-2 text-primary font-extrabold text-2xl tracking-tight">
-          <BookOpen className="w-7 h-7" />
+          <img src="/taskmate-mark.svg" alt="" className="w-8 h-8" />
           TaskMate
         </div>
         <div className="flex items-center gap-3">
@@ -359,7 +359,7 @@ export default function LandingPage() {
       {/* ── Footer ── */}
       <footer className="px-6 py-8 border-t border-border text-center text-xs text-muted-foreground">
         <div className="flex items-center justify-center gap-2 mb-2 text-primary font-bold text-base">
-          <BookOpen className="w-4 h-4" />
+          <img src="/taskmate-mark.svg" alt="" className="w-5 h-5" />
           TaskMate
         </div>
         A quiet, professional school management platform.
