@@ -26,6 +26,7 @@ import {
   type Note,
   type Notification,
   type Role,
+  type TeacherApprovalRequest,
   type User,
 } from '../data/mockData';
 
@@ -110,20 +111,32 @@ interface AuthContextType {
   getResultsForStudent: (studentId: string) => ExamResult[];
   getNotificationsForStudent: (studentId: string) => Notification[];
   getNotificationsUnreadCount: (studentId: string) => number;
+  approvalRequests: TeacherApprovalRequest[];
+  approveTeacher: (teacherId: string) => Promise<void>;
+  denyTeacher: (teacherId: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const PROFILE_PUBLIC_SELECT =
-  'id, name, username, role, class, roll_number, teacher_id, photo_url';
+  'id, name, username, role, class, roll_number, teacher_id, photo_url, approval_status';
 const PROFILE_PRIVATE_SELECT =
-  'id, name, username, role, class, roll_number, guardian_name, guardian_phone, teacher_id, photo_url';
+  'id, name, username, role, class, roll_number, guardian_name, guardian_phone, teacher_id, photo_url, approval_status';
 
 const toEmail = (username: string) =>
   `${username.trim().toLowerCase()}@taskmate.app`;
 
 function asRecord(value: unknown): Record<string, unknown> {
   return (value ?? {}) as Record<string, unknown>;
+}
+
+function describeSupabaseError(error: unknown, fallback: string): string {
+  const record = asRecord(error);
+  const details = [record.message, record.details, record.hint, record.code]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .map((value) => value.trim());
+
+  return details.length > 0 ? `${fallback} (${details.join(' — ')})` : fallback;
 }
 
 function rowToUser(row: Record<string, unknown>): User {
@@ -138,6 +151,19 @@ function rowToUser(row: Record<string, unknown>): User {
     guardianPhone: (row.guardian_phone as string) ?? undefined,
     teacherId: (row.teacher_id as string) ?? undefined,
     photoUrl: (row.photo_url as string) ?? undefined,
+    approvalStatus: (row.approval_status as User['approvalStatus']) ?? 'approved',
+  };
+}
+
+function rowToApprovalRequest(row: Record<string, unknown>): TeacherApprovalRequest {
+  return {
+    id: row.id as string,
+    teacherId: row.teacher_id as string,
+    teacherName: (row.teacher_name as string) ?? 'Teacher',
+    username: (row.username as string) ?? '',
+    status: (row.status as TeacherApprovalRequest['status']) ?? 'pending',
+    createdAt: row.created_at as string,
+    reviewedAt: (row.reviewed_at as string) ?? undefined,
   };
 }
 
@@ -221,10 +247,10 @@ function rowToActivity(row: Record<string, unknown>): ActivityItem {
   };
 }
 
-function storageTarget(storagePath: string): {
+function storageTarget(storagePath: string, fallbackBucket?: 'notes' | 'announcements' | 'library' | 'avatars' | 'message_files'): {
   bucket: 'notes' | 'announcements' | 'library' | 'avatars' | 'message_files';
   path: string;
-} {
+} | null {
   const normalized = storagePath.replace(/^\/+/, '');
   const parts = normalized.split('/').filter(Boolean);
   const first = parts[0];
@@ -242,7 +268,7 @@ function storageTarget(storagePath: string): {
     };
   }
 
-  return { bucket: 'notes', path: normalized };
+  return fallbackBucket ? { bucket: fallbackBucket, path: normalized } : null;
 }
 
 function messageFromRow(row: Record<string, unknown>) {
@@ -294,6 +320,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [library, setLibrary] = useState<LibraryNote[]>([]);
   const [activityLog, setActivityLog] = useState<ActivityItem[]>([]);
+  const [approvalRequests, setApprovalRequests] = useState<TeacherApprovalRequest[]>([]);
 
   const loadConversations = useCallback(
     async (userId: string, role: 'teacher' | 'student') => {
@@ -344,10 +371,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         announcementsResponse,
         libraryResponse,
         activityResponse,
+        approvalResponse,
       ] = await Promise.all([
         supabase
           .from('profiles')
-          .select(PROFILE_PUBLIC_SELECT)
+          // RLS decides which rows a teacher can see; it does not hide
+          // individual columns. Request the complete assigned-student row so
+          // guardian details are available to the teacher directory and ID
+          // card as intended.
+          .select(PROFILE_PRIVATE_SELECT)
           .eq('teacher_id', teacherId)
           .eq('role', 'student'),
         supabase
@@ -376,6 +408,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .eq('teacher_id', teacherId)
           .order('created_at', { ascending: false })
           .limit(50),
+        supabase
+          .from('teacher_approval_requests')
+          .select('*')
+          .order('created_at', { ascending: false }),
       ]);
 
       if (studentsResponse.data) {
@@ -400,6 +436,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (activityResponse.data) {
         setActivityLog(
           activityResponse.data.map((row) => rowToActivity(asRecord(row))),
+        );
+      }
+      if (approvalResponse.data) {
+        setApprovalRequests(
+          approvalResponse.data.map((row) => rowToApprovalRequest(asRecord(row))),
         );
       }
 
@@ -514,7 +555,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const handleSession = async (session: Session) => {
       const generation = ++loadVersionRef.current;
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select(PROFILE_PRIVATE_SELECT)
         .eq('id', session.user.id)
@@ -522,12 +563,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (!mounted || generation !== loadVersionRef.current) return;
 
+      if (profileError) {
+        console.warn('Could not load the signed-in profile.', profileError);
+        setCurrentUser(null);
+        setTeacherProfile(null);
+        setLoading(false);
+        return;
+      }
       if (!profile) {
+        // An Auth user without a matching profile is an incomplete account
+        // (usually an old failed signup). Do not leave the app in a blank,
+        // authenticated state.
+        await supabase.auth.signOut();
         setLoading(false);
         return;
       }
 
       const user = rowToUser(asRecord(profile));
+      if (user.role === 'teacher' && user.approvalStatus !== 'approved') {
+        await supabase.auth.signOut();
+        setLoading(false);
+        return;
+      }
       setCurrentUser(user);
       setTeacherProfile((previous) => (previous?.id === user.id ? previous : previous));
 
@@ -568,6 +625,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setNotifications([]);
         setLibrary([]);
         setActivityLog([]);
+        setApprovalRequests([]);
       }
     });
 
@@ -656,7 +714,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     role: Role,
   ) => {
     const normalizedUsername = username.trim().toLowerCase();
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email: toEmail(normalizedUsername),
       password,
     });
@@ -665,13 +723,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { success: false, error: 'Incorrect username or password.' };
     }
 
-    const { data: profile } = await supabase
+    const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('role')
-      .eq('username', normalizedUsername)
+        .select('role, approval_status')
+      .eq('id', data.session?.user.id ?? '')
       .maybeSingle();
 
-    if (profile && asRecord(profile).role !== role) {
+    if (profileError || !profile) {
+      await supabase.auth.signOut();
+      return {
+        success: false,
+        error: 'Your account profile is incomplete. Please contact the administrator.',
+      };
+    }
+
+    if (asRecord(profile).role !== role) {
       await supabase.auth.signOut();
       return {
         success: false,
@@ -721,6 +787,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data, error } = await supabase.auth.signUp({
       email: toEmail(normalizedUsername),
       password,
+      options: {
+        data: {
+          name: name.trim(),
+          username: normalizedUsername,
+          role: 'teacher',
+        },
+      },
     });
 
     if (error || !data.user) {
@@ -730,18 +803,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
     }
 
-    const { error: profileError } = await supabase.from('profiles').insert({
-      id: data.user.id,
-      name: name.trim(),
-      username: normalizedUsername,
-      role: 'teacher',
-    });
+    // The final SQL creates the profile from the Auth trigger so this also
+    // works when Supabase email confirmations are enabled. Keep a fallback
+    // for installations that have not run the final migration yet.
+    const { data: createdProfile, error: profileLookupError } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('id', data.user.id)
+      .maybeSingle();
 
-    if (profileError) {
-      return { success: false, error: profileError.message };
+    if (profileLookupError) {
+      return { success: false, error: describeSupabaseError(profileLookupError, 'Could not verify the teacher profile') };
     }
 
-    return { success: true };
+    if (!createdProfile && data.session) {
+      const { error: profileError } = await supabase.from('profiles').insert({
+        id: data.user.id,
+        name: name.trim(),
+        username: normalizedUsername,
+        role: 'teacher',
+      });
+
+      if (profileError) {
+        return { success: false, error: describeSupabaseError(profileError, 'Could not create the teacher profile') };
+      }
+    }
+
+    if (data.session) await supabase.auth.signOut();
+    return {
+      success: false,
+      error: 'Account created. Authentication pending — the administrator must approve this teacher account before you can sign in.',
+    };
   };
 
   const changePassword = async (
@@ -833,7 +925,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .upload(nextPath, file, { contentType: file.type, upsert: false });
 
       if (uploadError) {
-        return { success: false, error: 'Photo upload failed. Please try again.' };
+        return {
+          success: false,
+          error: describeSupabaseError(uploadError, 'Photo upload failed'),
+        };
       }
 
       const { error: profileError } = await supabase
@@ -845,7 +940,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await supabase.storage.from('avatars').remove([nextPath]);
         return {
           success: false,
-          error: 'Could not save the photo to your profile.',
+          error: describeSupabaseError(profileError, 'Could not save the photo to your profile'),
         };
       }
 
@@ -916,11 +1011,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { success: false, error: 'Teacher session is no longer active.' };
     }
 
-    const { data: existing } = await supabase
+    const { data: existing, error: existingError } = await supabase
       .from('profiles')
       .select('id')
       .eq('username', normalizedUsername)
       .maybeSingle();
+
+    if (existingError) {
+      return { success: false, error: describeSupabaseError(existingError, 'Could not check the username') };
+    }
 
     if (existing) {
       return { success: false, error: 'This username is already taken.' };
@@ -939,6 +1038,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
     }
 
+    if (authData.user.identities && authData.user.identities.length === 0) {
+      return {
+        success: false,
+        error: 'This username is already registered. Please choose another.',
+      };
+    }
+
     const { error: rpcError } = await supabase.rpc('create_student_profile', {
       p_student_id: authData.user.id,
       p_name: safeName,
@@ -952,7 +1058,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (rpcError) {
       return {
         success: false,
-        error: `Student account creation did not complete: ${rpcError.message}. The Auth user may need manual cleanup in Supabase.`,
+        error: describeSupabaseError(
+          rpcError,
+          'Student account creation did not complete. Run the final Supabase SQL migration and retry.',
+        ),
       };
     }
 
@@ -989,7 +1098,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .delete()
       .eq('id', studentId);
 
-    if (error) throw new Error('Could not remove the student.');
+    if (error) throw new Error(describeSupabaseError(error, 'Could not remove the student'));
     setStudents((previous) =>
       previous.filter((student) => student.id !== studentId),
     );
@@ -1020,7 +1129,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .update(databaseUpdates)
       .eq('id', studentId);
 
-    if (error) throw new Error('Could not update the student.');
+    if (error) throw new Error(describeSupabaseError(error, 'Could not update the student'));
 
     setStudents((previous) =>
       previous.map((student) =>
@@ -1037,7 +1146,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       file?: File;
     },
   ) => {
-    if (!currentUser) throw new Error('You are not logged in.');
+    if (!currentUser || currentUser.role !== 'teacher') {
+      throw new Error('Only teachers can upload notes.');
+    }
+    const teacherId = currentUser.id;
 
     let storagePath: string | null = null;
 
@@ -1054,7 +1166,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (!validation.valid) throw new Error(validation.error);
 
-      storagePath = buildStoragePath(`notes/${currentUser.id}`, note.file);
+       storagePath = buildStoragePath(`notes/${teacherId}`, note.file);
       const { error: uploadError } = await supabase.storage
         .from('notes')
         .upload(storagePath, note.file, {
@@ -1063,14 +1175,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
 
       if (uploadError) {
-        throw new Error('The note file could not be uploaded.');
+        throw new Error(describeSupabaseError(uploadError, 'The note file could not be uploaded'));
       }
     }
 
     const { data, error } = await supabase
       .from('notes')
       .insert({
-        teacher_id: note.teacherId,
+        teacher_id: teacherId,
         class: note.class,
         subject: note.subject,
         chapter: note.chapter,
@@ -1085,7 +1197,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (storagePath) {
         await supabase.storage.from('notes').remove([storagePath]);
       }
-      throw new Error('The note could not be saved.');
+      throw new Error(describeSupabaseError(error, 'The note could not be saved'));
     }
 
     const newNote = rowToNote(asRecord(data));
@@ -1094,7 +1206,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const targets = students.filter(
       (student) =>
         student.class === note.class &&
-        student.teacherId === note.teacherId,
+        student.teacherId === teacherId,
     );
 
     if (targets.length > 0) {
@@ -1108,14 +1220,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     await logActivity(
-      note.teacherId,
+      teacherId,
       'notes_uploaded',
       `Uploaded ${note.filename} for ${note.class}`,
     );
   };
 
   const getSignedNoteUrl = useCallback(async (path: string) => {
-    const target = storageTarget(path);
+    const target = storageTarget(path, 'notes');
+    if (!target?.path) return null;
     const { data, error } = await supabase.storage
       .from(target.bucket)
       .createSignedUrl(target.path, 3600);
@@ -1126,7 +1239,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const addResult = async (
     result: Omit<ExamResult, 'id' | 'date'>,
   ) => {
-    if (!currentUser) throw new Error('You are not logged in.');
+    if (!currentUser || currentUser.role !== 'teacher') {
+      throw new Error('Only teachers can publish results.');
+    }
+    const teacherId = currentUser.id;
+    if (result.teacherId !== teacherId) {
+      throw new Error('This result is not assigned to the signed-in teacher.');
+    }
+    if (!Number.isFinite(result.marksObtained) || !Number.isFinite(result.totalMarks)) {
+      throw new Error('Please enter valid numeric marks.');
+    }
     if (
       result.totalMarks <= 0 ||
       result.marksObtained < 0 ||
@@ -1138,7 +1260,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const student = students.find(
       (item) =>
         item.id === result.studentId &&
-        item.teacherId === result.teacherId,
+        item.teacherId === teacherId,
     );
 
     if (!student) throw new Error('This student is not assigned to you.');
@@ -1146,7 +1268,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data, error } = await supabase
       .from('results')
       .insert({
-        teacher_id: result.teacherId,
+        teacher_id: teacherId,
         student_id: result.studentId,
         exam_name: result.examName,
         subject: result.subject,
@@ -1157,7 +1279,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .select()
       .single();
 
-    if (error || !data) throw new Error('The result could not be saved.');
+    if (error || !data) {
+      throw new Error(describeSupabaseError(error, 'The result could not be saved'));
+    }
 
     setResults((previous) => [rowToResult(asRecord(data)), ...previous]);
 
@@ -1170,13 +1294,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
     if (notificationError) {
-      throw new Error(
-        'The result was saved, but the student notification could not be created.',
-      );
+      console.warn('Result saved but notification creation failed.', notificationError);
     }
 
     await logActivity(
-      result.teacherId,
+      teacherId,
       'result_published',
       `Published ${result.examName} for ${student.name}`,
     );
@@ -1185,6 +1307,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const addAnnouncement = async (
     announcement: AnnouncementInput,
   ) => {
+    if (!currentUser || currentUser.role !== 'teacher') {
+      throw new Error('Only teachers can post announcements.');
+    }
+    const teacherId = currentUser.id;
     let storagePath: string | null = null;
     let uploadedPath: string | null = null;
     let attachmentName = announcement.attachmentName ?? null;
@@ -1210,7 +1336,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!validation.valid) throw new Error(validation.error);
 
       uploadedPath = buildStoragePath(
-        `announcements/${announcement.teacherId}`,
+        `announcements/${teacherId}`,
         announcement.attachmentFile,
       );
 
@@ -1223,7 +1349,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
 
       if (uploadError) {
-        throw new Error('The announcement attachment could not be uploaded.');
+        throw new Error(describeSupabaseError(uploadError, 'The announcement attachment could not be uploaded'));
       }
 
       storagePath = `announcements/${uploadedPath}`;
@@ -1235,7 +1361,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data, error } = await supabase
       .from('announcements')
       .insert({
-        teacher_id: announcement.teacherId,
+        teacher_id: teacherId,
         title: announcement.title,
         content: announcement.content,
         class_scope: announcement.classScope,
@@ -1251,7 +1377,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (uploadedPath) {
         await supabase.storage.from('announcements').remove([uploadedPath]);
       }
-      throw new Error('The announcement could not be saved.');
+      throw new Error(describeSupabaseError(error, 'The announcement could not be saved'));
     }
 
     setAnnouncements((previous) => [
@@ -1261,7 +1387,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const targets = students.filter(
       (student) =>
-        student.teacherId === announcement.teacherId &&
+        student.teacherId === teacherId &&
         (announcement.classScope === 'All Classes' ||
           student.class === announcement.classScope),
     );
@@ -1277,7 +1403,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     await logActivity(
-      announcement.teacherId,
+      teacherId,
       'announcement_posted',
       `Posted "${announcement.title}"`,
     );
@@ -1290,11 +1416,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .delete()
       .eq('id', id);
 
-    if (error) throw new Error('The announcement could not be removed.');
+    if (error) throw new Error(describeSupabaseError(error, 'The announcement could not be removed'));
 
     if (item?.attachmentPath) {
       const target = storageTarget(item.attachmentPath);
-      await supabase.storage.from(target.bucket).remove([target.path]);
+      if (target?.path) {
+        const { error: cleanupError } = await supabase.storage.from(target.bucket).remove([target.path]);
+        if (cleanupError) {
+          console.warn('Announcement attachment cleanup failed.', cleanupError);
+        }
+      }
     }
 
     setAnnouncements((previous) =>
@@ -1352,11 +1483,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .maybeSingle();
 
     if (lookup.error) {
-      throw new Error('The conversation could not be loaded.');
+      throw new Error(describeSupabaseError(lookup.error, 'The conversation could not be loaded'));
     }
 
     let conversationId = asRecord(lookup.data).id as string | undefined;
 
+    let conversationCreationError: unknown = null;
     if (!conversationId) {
       const created = await supabase
         .from('conversations')
@@ -1367,6 +1499,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .select('id')
         .single();
 
+      conversationCreationError = created.error;
       if (created.error || !created.data) {
         const retry = await supabase
           .from('conversations')
@@ -1382,7 +1515,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     if (!conversationId) {
-      throw new Error('The conversation could not be created.');
+      throw new Error(describeSupabaseError(conversationCreationError, 'The conversation could not be created'));
     }
 
     // Handle file upload if provided
@@ -1414,7 +1547,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .upload(path, file, { contentType: file.type, upsert: false });
 
       if (uploadResult.error) {
-        throw new Error('File upload failed. Please try again.');
+        throw new Error(describeSupabaseError(uploadResult.error, 'File upload failed'));
       }
 
       attachmentPath = path;
@@ -1441,7 +1574,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (attachmentPath) {
         await supabase.storage.from('message_files').remove([attachmentPath]);
       }
-      throw new Error('The message could not be sent. Please try again.');
+      throw new Error(describeSupabaseError(messageResponse.error, 'The message could not be sent'));
     }
 
     const message = messageFromRow(asRecord(messageResponse.data));
@@ -1488,7 +1621,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .update({ read: true })
       .eq('id', id);
 
-    if (error) throw new Error('The notification could not be updated.');
+    if (error) throw new Error(describeSupabaseError(error, 'The notification could not be updated'));
 
     setNotifications((previous) =>
       previous.map((notification) =>
@@ -1505,7 +1638,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .update({ read: true })
       .eq('student_id', studentId);
 
-    if (error) throw new Error('The notifications could not be updated.');
+    if (error) throw new Error(describeSupabaseError(error, 'The notifications could not be updated'));
 
     setNotifications((previous) =>
       previous.map((notification) =>
@@ -1519,7 +1652,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const addToLibrary = async (
     note: Omit<LibraryNote, 'id' | 'date'> & { file?: File },
   ) => {
-    if (!currentUser) throw new Error('You are not logged in.');
+    if (!currentUser || currentUser.role !== 'teacher') {
+      throw new Error('Only teachers can add library items.');
+    }
+    const teacherId = currentUser.id;
 
     let storagePath: string | null = null;
 
@@ -1538,7 +1674,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (!validation.valid) throw new Error(validation.error);
 
-      storagePath = buildStoragePath(`library/${currentUser.id}`, note.file);
+       storagePath = buildStoragePath(`library/${teacherId}`, note.file);
       const { error: uploadError } = await supabase.storage
         .from('library')
         .upload(storagePath, note.file, {
@@ -1547,7 +1683,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
 
       if (uploadError) {
-        throw new Error('The library file could not be uploaded.');
+        throw new Error(describeSupabaseError(uploadError, 'The library file could not be uploaded'));
       }
     }
 
@@ -1558,7 +1694,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data, error } = await supabase
       .from('library')
       .insert({
-        teacher_id: note.teacherId,
+        teacher_id: teacherId,
         subject: note.subject,
         chapter: note.chapter,
         filename: note.filename,
@@ -1572,7 +1708,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (storagePath) {
         await supabase.storage.from('library').remove([storagePath]);
       }
-      throw new Error('The library item could not be saved.');
+      throw new Error(describeSupabaseError(error, 'The library item could not be saved'));
     }
 
     setLibrary((previous) => [
@@ -1588,11 +1724,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .delete()
       .eq('id', id);
 
-    if (error) throw new Error('The library item could not be removed.');
+    if (error) throw new Error(describeSupabaseError(error, 'The library item could not be removed'));
 
     if (item?.storagePath) {
       const target = storageTarget(item.storagePath);
-      await supabase.storage.from(target.bucket).remove([target.path]);
+      if (target?.path) {
+        const { error: cleanupError } = await supabase.storage.from(target.bucket).remove([target.path]);
+        if (cleanupError) {
+          console.warn('Library attachment cleanup failed.', cleanupError);
+        }
+      }
     }
 
     setLibrary((previous) =>
@@ -1648,6 +1789,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [notifications],
   );
 
+  const approveTeacher = async (teacherId: string) => {
+    const { error } = await supabase.rpc('approve_teacher_account', {
+      p_teacher_id: teacherId,
+    });
+    if (error) throw new Error(describeSupabaseError(error, 'Could not approve this teacher'));
+    setApprovalRequests((previous) =>
+      previous.map((request) =>
+        request.teacherId === teacherId
+          ? { ...request, status: 'approved', reviewedAt: new Date().toISOString() }
+          : request,
+      ),
+    );
+  };
+
+  const denyTeacher = async (teacherId: string) => {
+    const { error } = await supabase.rpc('deny_teacher_account', {
+      p_teacher_id: teacherId,
+    });
+    if (error) throw new Error(describeSupabaseError(error, 'Could not deny this teacher'));
+    setApprovalRequests((previous) =>
+      previous.map((request) =>
+        request.teacherId === teacherId
+          ? { ...request, status: 'denied', reviewedAt: new Date().toISOString() }
+          : request,
+      ),
+    );
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -1687,6 +1856,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         getResultsForStudent,
         getNotificationsForStudent,
         getNotificationsUnreadCount,
+        approvalRequests,
+        approveTeacher,
+        denyTeacher,
       }}
     >
       {children}
