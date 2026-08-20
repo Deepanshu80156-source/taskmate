@@ -13,7 +13,8 @@ import {
   Trophy,
   LogOut,
   LayoutDashboard,
-  BookMarked
+  BookMarked,
+  ShieldCheck
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import TaskMateAvatar from '@/components/ui/TaskMateAvatar';
@@ -51,6 +52,9 @@ export function Sidebar({ mobile }: { mobile?: boolean }) {
     { href: '/teacher/announcements', label: 'Announcements', icon: Megaphone },
     { href: '/teacher/messages', label: 'Messages', icon: MessageCircle },
     { href: '/teacher/settings', label: 'Settings', icon: Settings },
+    ...(currentUser.username === 'deepanshu'
+      ? [{ href: '/teacher/approvals', label: 'Teacher Approvals', icon: ShieldCheck }]
+      : []),
   ];
 
   const links = isTeacher ? teacherLinks : studentLinks;
@@ -59,7 +63,7 @@ export function Sidebar({ mobile }: { mobile?: boolean }) {
     <aside className={`w-64 bg-sidebar border-r border-sidebar-border flex flex-col h-full shrink-0 sticky top-0 ${mobile ? '' : 'hidden md:flex'}`}>
       <div className="h-16 flex items-center px-6 border-b border-sidebar-border">
         <div className="flex items-center gap-2 text-sidebar-primary-foreground font-semibold text-lg">
-          <BookOpen className="w-5 h-5 text-sidebar-primary" />
+          <img src="/taskmate-mark.svg" alt="" className="w-6 h-6" />
           TaskMate
         </div>
       </div>
