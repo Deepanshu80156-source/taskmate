@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useLocation, useParams } from 'wouter';
 import { motion, AnimatePresence } from 'framer-motion';
-import { BookOpen, Lock, User as UserIcon, AlertCircle, UserPlus, Loader2 } from 'lucide-react';
+import { Lock, User as UserIcon, AlertCircle, UserPlus, Loader2 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { Role } from '@/data/mockData';
 
@@ -60,7 +60,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen login-bg flex flex-col items-center justify-center p-6">
       <div className="absolute top-6 left-6 flex items-center gap-2 text-primary font-bold text-xl cursor-pointer" onClick={() => setLocation('/')}>
-        <BookOpen className="w-6 h-6" /><span>TaskMate</span>
+        <img src="/taskmate-mark.svg" alt="" className="w-7 h-7" /><span>TaskMate</span>
       </div>
 
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.4 }}
@@ -73,7 +73,7 @@ export default function LoginPage() {
             {isTeacher ? (mode === 'create' ? 'Create Account' : 'Teacher Login') : 'Student Login'}
           </h1>
           <p className="text-muted-foreground mt-2 text-sm">
-            {isTeacher ? (mode === 'create' ? 'Set up your teacher account to get started.' : 'Welcome back. Sign in to manage your class.') : 'Enter your credentials provided by your teacher.'}
+            {isTeacher ? (mode === 'create' ? 'Create an account, then wait for administrator approval.' : 'Welcome back. Sign in to manage your class.') : 'Enter your credentials provided by your teacher.'}
           </p>
         </div>
 
