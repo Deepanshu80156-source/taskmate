@@ -27,6 +27,15 @@ export default function TeacherAnnouncements() {
 
   const teacherAnnouncements = announcements.filter(a => a.teacherId === currentUser?.id);
 
+  const handleRemove = async (id: string) => {
+    setError(null);
+    try {
+      await removeAnnouncement(id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not remove the announcement.');
+    }
+  };
+
   const handlePost = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newContent.trim() || !newTitle.trim() || !currentUser) return;
@@ -176,7 +185,7 @@ export default function TeacherAnnouncements() {
             >
               <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button 
-                  onClick={() => removeAnnouncement(announcement.id)}
+                  onClick={() => void handleRemove(announcement.id)}
                   className="p-2 bg-destructive/10 text-destructive rounded-lg hover:bg-destructive hover:text-destructive-foreground transition-colors"
                   title="Delete Announcement"
                 >

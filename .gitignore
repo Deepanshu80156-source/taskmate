@@ -27,3 +27,9 @@ pnpm-debug.log*
 
 # TypeScript cache
 *.tsbuildinfo
+
+# Native Android local/build files
+android/.gradle/
+android/local.properties
+android/**/build/
+TaskMate-fixed-debug.apk

@@ -3,7 +3,7 @@ import { useAuth } from '@/context/AuthContext';
 import TaskMateAvatar from '@/components/ui/TaskMateAvatar';
 import MessageAttachment from '@/components/MessageAttachment';
 import { usePersistentState } from '@/hooks/usePersistentState';
-import { MessageCircle, Send, Search, ArrowLeft, RotateCcw, Paperclip, XCircle, FileText } from 'lucide-react';
+import { MessageCircle, Send, Search, ArrowLeft, RotateCcw, Paperclip, XCircle, FileText, AlertCircle } from 'lucide-react';
 
 // ─── localStorage helpers for "last seen" message tracking ───
 const STORAGE_KEY = 'tm_last_seen';
@@ -41,6 +41,7 @@ export default function TeacherMessages() {
   );
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [loadingFileId, setLoadingFileId] = useState<string | null>(null);
   const [, forceUpdate] = useState(0); // trigger re-render when localStorage changes
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -113,10 +114,13 @@ export default function TeacherMessages() {
     if ((!newMessage.trim() && !selectedFile) || !activeStudentId || !currentUser || sending) return;
     const messageText = newMessage.trim();
     setSending(true);
+    setSendError(null);
     try {
       await sendMessage(activeStudentId, currentUser.id, messageText, selectedFile ?? undefined);
       setNewMessage('');
       setSelectedFile(null);
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : 'The message could not be sent.');
     } finally {
       setSending(false);
     }
@@ -293,6 +297,12 @@ export default function TeacherMessages() {
 
               {/* Input */}
               <div className="p-4 bg-background border-t border-border shrink-0">
+                {sendError && (
+                  <div className="mb-3 flex items-start gap-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-3 rounded-xl">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>{sendError}</span>
+                  </div>
+                )}
                 {selectedFile && (
                   <div className="mb-3 flex items-center gap-2 bg-muted p-2 rounded-lg text-xs">
                     <FileText className="w-4 h-4 text-primary" />

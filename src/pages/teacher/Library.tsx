@@ -71,6 +71,15 @@ export default function TeacherLibrary() {
     }
   };
 
+  const handleRemove = async (id: string) => {
+    setError(null);
+    try {
+      await removeFromLibrary(id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not remove the library item.');
+    }
+  };
+
   const handleDownload = async (item: { id: string; filename?: string; storagePath?: string }) => {
     if (!item.storagePath) return;
     setLoadingFileId(item.id);
@@ -248,7 +257,7 @@ export default function TeacherLibrary() {
                         </div>
                       </div>
                       <button
-                        onClick={() => removeFromLibrary(note.id)}
+                        onClick={() => void handleRemove(note.id)}
                         className="p-1.5 rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors opacity-0 group-hover:opacity-100 shrink-0"
                         title="Remove from library"
                       >

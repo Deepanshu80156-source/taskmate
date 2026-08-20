@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { Bell, CheckCircle2, BookOpen, BarChart2, Megaphone, MessageCircle } from 'lucide-react';
+import { Bell, CheckCircle2, BookOpen, BarChart2, Megaphone, MessageCircle, AlertCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 type NotifType = 'notes' | 'result' | 'announcement' | 'message';
@@ -14,6 +14,7 @@ const TYPE_CONFIG: Record<NotifType, { icon: React.ElementType; bg: string; text
 
 export function NotificationsPanel({ onClose }: { onClose: () => void }) {
   const { currentUser, getNotificationsForStudent, markNotificationRead, markAllNotificationsRead } = useAuth();
+  const [error, setError] = React.useState<string | null>(null);
 
   if (!currentUser) return null;
 
@@ -40,7 +41,14 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
         </h3>
         {unreadCount > 0 && (
           <button
-            onClick={() => markAllNotificationsRead(currentUser.id)}
+            onClick={async () => {
+              setError(null);
+              try {
+                await markAllNotificationsRead(currentUser.id);
+              } catch (actionError) {
+                setError(actionError instanceof Error ? actionError.message : 'Could not update notifications.');
+              }
+            }}
             className="text-xs text-primary font-medium hover:underline flex items-center gap-1"
           >
             <CheckCircle2 className="w-3 h-3" /> Mark all read
@@ -49,6 +57,12 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
       </div>
 
       {/* List */}
+      {error && (
+        <div className="mx-3 mt-2 flex items-start gap-2 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-2 rounded-lg">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+          <span>{error}</span>
+        </div>
+      )}
       <div className="overflow-y-auto flex-1 p-2 space-y-1">
         {notifications.length === 0 ? (
           <div className="p-8 text-center text-muted-foreground flex flex-col items-center gap-2">
@@ -63,7 +77,15 @@ export function NotificationsPanel({ onClose }: { onClose: () => void }) {
             return (
               <div
                 key={notif.id}
-                onClick={() => !notif.read && markNotificationRead(notif.id)}
+                onClick={async () => {
+                  if (notif.read) return;
+                  setError(null);
+                  try {
+                    await markNotificationRead(notif.id);
+                  } catch (actionError) {
+                    setError(actionError instanceof Error ? actionError.message : 'Could not update notification.');
+                  }
+                }}
                 className={`p-3 rounded-xl text-sm transition-colors cursor-pointer flex gap-3 items-start ${
                   notif.read
                     ? 'bg-transparent hover:bg-secondary/50'

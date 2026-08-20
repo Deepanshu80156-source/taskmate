@@ -3,7 +3,7 @@ import { useAuth } from '@/context/AuthContext';
 import TaskMateAvatar from '@/components/ui/TaskMateAvatar';
 import MessageAttachment from '@/components/MessageAttachment';
 import { usePersistentState } from '@/hooks/usePersistentState';
-import { MessageCircle, Send, RotateCcw, Paperclip, XCircle, FileText } from 'lucide-react';
+import { MessageCircle, Send, RotateCcw, Paperclip, XCircle, FileText, AlertCircle } from 'lucide-react';
 
 export default function StudentMessages() {
   const { currentUser, conversations, sendMessage, teacherProfile, getSignedNoteUrl } = useAuth();
@@ -16,6 +16,7 @@ export default function StudentMessages() {
   const [sending, setSending] = useState(false);
   const [pendingMessageId, setPendingMessageId] = useState<string | null>(null);
   const [failedMessageId, setFailedMessageId] = useState<string | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [loadingFileId, setLoadingFileId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -36,14 +37,17 @@ export default function StudentMessages() {
     if ((!newMessage.trim() && !selectedFile) || !currentUser || sending) return;
     const messageText = newMessage.trim();
     setSending(true);
-    setPendingMessageId(`local-${Date.now()}`);
+    const localMessageId = `local-${Date.now()}`;
+    setPendingMessageId(localMessageId);
     setFailedMessageId(null);
+    setSendError(null);
     try {
       await sendMessage(currentUser.id, currentUser.id, messageText, selectedFile ?? undefined);
       setNewMessage('');
       setSelectedFile(null);
-    } catch {
-      setFailedMessageId(`local-${Date.now()}`);
+    } catch (error) {
+      setFailedMessageId(localMessageId);
+      setSendError(error instanceof Error ? error.message : 'The message could not be sent.');
     } finally {
       setSending(false);
       setPendingMessageId(null);
@@ -145,6 +149,12 @@ export default function StudentMessages() {
 
         {/* Input Area */}
         <div className="p-4 bg-background/50 border-t border-border shrink-0">
+          {sendError && (
+            <div className="mb-3 flex items-start gap-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-3 rounded-xl">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{sendError}</span>
+            </div>
+          )}
           {selectedFile && (
             <div className="mb-3 flex items-center gap-2 bg-muted p-2 rounded-lg text-xs">
               <FileText className="w-4 h-4 text-primary" />

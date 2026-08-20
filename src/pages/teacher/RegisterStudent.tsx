@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { UserPlus, Save, CheckCircle } from 'lucide-react';
+import { UserPlus, Save, CheckCircle, AlertCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { CLASS_LIST } from '@/data/constants';
 
@@ -8,6 +8,7 @@ export default function TeacherRegisterStudent() {
   const { currentUser, addStudent, students } = useAuth();
   
   const [success, setSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [newCreds, setNewCreds] = useState({ username: '', password: '' });
   
   // Do not persist credentials in browser storage.
@@ -31,29 +32,38 @@ export default function TeacherRegisterStudent() {
     e.preventDefault();
     if (!currentUser) return;
     setBusy(true);
-    const result = await addStudent({
-      name: formData.name,
-      class: formData.class,
-      rollNumber: formData.rollNumber,
-      username: formData.username,
-      password: formData.password,
-      guardianName: formData.guardianName,
-      guardianPhone: formData.guardianPhone,
-      teacherId: currentUser.id
-    });
-    setBusy(false);
-    if (!result.success) { alert(result.error ?? 'Failed to register student.'); return; }
-    setNewCreds({ username: formData.username, password: formData.password });
-    setSuccess(true);
-    setFormData({
-      name: '',
-      class: '',
-      rollNumber: '',
-      username: '',
-      password: '',
-      guardianName: '',
-      guardianPhone: ''
-    });
+    setError(null);
+    try {
+      const result = await addStudent({
+        name: formData.name,
+        class: formData.class,
+        rollNumber: formData.rollNumber,
+        username: formData.username,
+        password: formData.password,
+        guardianName: formData.guardianName,
+        guardianPhone: formData.guardianPhone,
+        teacherId: currentUser.id
+      });
+      if (!result.success) {
+        setError(result.error ?? 'Failed to register student.');
+        return;
+      }
+      setNewCreds({ username: formData.username.trim().toLowerCase(), password: formData.password });
+      setSuccess(true);
+      setFormData({
+        name: '',
+        class: '',
+        rollNumber: '',
+        username: '',
+        password: '',
+        guardianName: '',
+        guardianPhone: ''
+      });
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Failed to register student.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -103,6 +113,12 @@ export default function TeacherRegisterStudent() {
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-6">
+            {error && (
+              <div className="flex items-start gap-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-3 rounded-xl">
+                <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                <span>{error}</span>
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-foreground ml-1">Student Full Name</label>
@@ -161,9 +177,9 @@ export default function TeacherRegisterStudent() {
             </div>
 
             <div className="pt-4 flex justify-end">
-              <button type="submit" className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-xl px-8 py-3 transition-colors flex items-center gap-2">
+              <button type="submit" disabled={busy} className="bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed text-primary-foreground font-semibold rounded-xl px-8 py-3 transition-colors flex items-center gap-2">
                 <Save className="w-5 h-5" />
-                Create Account
+                {busy ? 'Creating…' : 'Create Account'}
               </button>
             </div>
           </form>

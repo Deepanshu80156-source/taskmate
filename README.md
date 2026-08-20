@@ -2,7 +2,27 @@
 
 A modern, full-featured student management portal for tuition classes. Manage notes, results, announcements, messages, and more—all in one place.
 
-**Status:** ✅ Production Ready
+**Status:** ✅ Repaired and build-verified
+
+## Included repair
+
+This version includes the non-destructive registration, visibility, and avatar repair:
+
+- Teachers request the complete profile row for their assigned students, including guardian details.
+- Legacy Supabase public, signed, and authenticated avatar URLs are converted into storage paths and re-signed at display time.
+- Avatar loading ignores stale in-flight responses when a profile changes.
+- Student account creation preserves the teacher session, detects duplicate Auth identities, and is safe to retry after a timeout.
+- Teacher signup creates the profile inside the Supabase Auth transaction, including when email confirmation is enabled.
+- `supabase/taskmate_supabase_final.sql` is the single rerunnable, non-destructive SQL file for existing projects.
+
+The deliverable intentionally does not include `.env.local` or Git metadata. Keep your existing local environment file unchanged and copy the source files into that project folder.
+
+## Final setup checklist
+
+1. Extract this folder and keep your existing `.env.local` beside `package.json`.
+2. Run `npm ci`, then `npm run typecheck` and `npm run build`.
+3. In the existing Supabase project, run only `supabase/taskmate_supabase_final.sql`.
+4. Test teacher signup, student registration/login, profile photos, notes, results, announcements, library, messages, and notifications before pushing the repaired folder.
 
 ---
 
@@ -81,7 +101,7 @@ VITE_SUPABASE_ANON_KEY=your_anon_key_here
 ### 4. Set Up the Database
 
 1. In Supabase dashboard, go to **SQL Editor**
-2. Create a new query and paste the contents of `supabase/taskmate_supabase_complete.sql`
+2. Create a new query and paste the contents of `supabase/taskmate_supabase_final.sql`
 3. Run the query to create all tables and seed data
 
 ### 5. Start Development Server

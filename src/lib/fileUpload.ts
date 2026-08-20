@@ -120,17 +120,22 @@ export function normalizeAvatarStoragePath(value?: string | null): string | null
   if (/^https?:\/\//i.test(trimmed)) {
     try {
       const url = new URL(trimmed);
-      const pathname = url.pathname.replace(/^\/+/, '');
-      const publicMarker = '/storage/v1/object/public/avatars/';
-      const signedMarker = '/storage/v1/object/sign/avatars/';
+      // Keep the leading slash while matching Supabase's storage URL
+      // prefixes. Older versions removed it first, so legacy public and
+      // signed avatar URLs were treated as external images and could not be
+      // re-signed when the bucket was private or the token had expired.
+      const pathname = url.pathname;
+      const storageMarkers = [
+        '/storage/v1/object/public/avatars/',
+        '/storage/v1/object/sign/avatars/',
+        '/storage/v1/object/authenticated/avatars/',
+      ];
+      const marker = storageMarkers.find((candidate) =>
+        pathname.includes(candidate),
+      );
 
-      if (pathname.includes(publicMarker)) {
-        const suffix = pathname.slice(pathname.indexOf(publicMarker) + publicMarker.length);
-        return suffix.replace(/^\/+/, '').split('?')[0] || null;
-      }
-
-      if (pathname.includes(signedMarker)) {
-        const suffix = pathname.slice(pathname.indexOf(signedMarker) + signedMarker.length);
+      if (marker) {
+        const suffix = pathname.slice(pathname.indexOf(marker) + marker.length);
         return suffix.replace(/^\/+/, '').split('?')[0] || null;
       }
 

@@ -1,11 +1,20 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+const configuredSupabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+const configuredSupabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+const hasValidSupabaseConfig =
+  /^https?:\/\/[^\s/]+(?:\/[^\s]*)?$/i.test(configuredSupabaseUrl) &&
+  Boolean(configuredSupabaseAnonKey) &&
+  !configuredSupabaseUrl.includes('PASTE_MY_') &&
+  !configuredSupabaseAnonKey.includes('PASTE_MY_');
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY environment variables.');
-}
+// Keep the shell renderable before local Supabase credentials are added.
+const supabaseUrl = hasValidSupabaseConfig
+  ? configuredSupabaseUrl
+  : 'https://placeholder.supabase.co';
+const supabaseAnonKey = hasValidSupabaseConfig
+  ? configuredSupabaseAnonKey
+  : 'placeholder-anon-key';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 

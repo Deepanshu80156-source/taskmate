@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { Upload, FileUp, Save, CheckCircle, FileText, Loader2 } from 'lucide-react';
+import { Upload, FileUp, Save, CheckCircle, FileText, Loader2, AlertCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { CLASS_LIST } from '@/data/constants';
 import { usePersistentState } from '@/hooks/usePersistentState';
@@ -10,6 +10,7 @@ export default function TeacherUploadNotes() {
 
   const [success, setSuccess] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [notifiedCount, setNotifiedCount] = useState(0);
 
@@ -29,26 +30,31 @@ export default function TeacherUploadNotes() {
     e.preventDefault();
     if (!currentUser || !selectedFile) return;
     setBusy(true);
+    setError(null);
+    try {
+      await addNote({
+        class: formData.class,
+        subject: formData.subject,
+        chapter: formData.chapter,
+        filename: selectedFile.name,
+        description: formData.description,
+        teacherId: currentUser.id,
+        file: selectedFile,
+      });
 
-    await addNote({
-      class: formData.class,
-      subject: formData.subject,
-      chapter: formData.chapter,
-      filename: selectedFile.name,
-      description: formData.description,
-      teacherId: currentUser.id,
-      file: selectedFile,
-    });
-
-    const count = students.filter(s => s.class === formData.class && s.teacherId === currentUser.id).length;
-    setNotifiedCount(count);
-    setBusy(false);
-    setSuccess(true);
-    setTimeout(() => {
-      setSuccess(false);
-      setSelectedFile(null);
-      setFormData({ class: '', subject: '', chapter: '', description: '' });
-    }, 4000);
+      const count = students.filter(s => s.class === formData.class && s.teacherId === currentUser.id).length;
+      setNotifiedCount(count);
+      setSuccess(true);
+      setTimeout(() => {
+        setSuccess(false);
+        setSelectedFile(null);
+        setFormData({ class: '', subject: '', chapter: '', description: '' });
+      }, 4000);
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Could not upload the notes.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -82,6 +88,12 @@ export default function TeacherUploadNotes() {
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-5">
+              {error && (
+                <div className="flex items-start gap-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-3 rounded-xl">
+                  <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                  <span>{error}</span>
+                </div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium text-foreground ml-1">Class *</label>

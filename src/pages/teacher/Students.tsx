@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { Users, Search, Trash2, Edit, Download, CreditCard, KeyRound, UserPlus, X } from 'lucide-react';
+import { Users, Search, Trash2, Edit, Download, CreditCard, KeyRound, UserPlus, X, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'wouter';
 import { User } from '@/data/mockData';
@@ -16,6 +16,7 @@ export default function TeacherStudents() {
   const [resetTarget, setResetTarget] = useState<User | null>(null);
   const [resetPw, setResetPw] = useState('');
   const [resetDone, setResetDone] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const teacherStudents = currentUser ? getStudentsForTeacher(currentUser.id) : [];
   const classes = ['All', ...Array.from(new Set(teacherStudents.map(s => s.class).filter(Boolean)))];
@@ -30,34 +31,45 @@ export default function TeacherStudents() {
 
   const handleDelete = async (id: string, name: string) => {
     if (window.confirm(`Are you sure you want to remove ${name}? This action cannot be undone.`)) {
-      await removeStudent(id);
+      setActionError(null);
+      try {
+        await removeStudent(id);
+      } catch (error) {
+        setActionError(error instanceof Error ? error.message : 'Could not remove the student.');
+      }
     }
   };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (editingStudent) {
-      await updateStudent(editingStudent.id, {
-        name: editingStudent.name,
-        class: editingStudent.class,
-        rollNumber: editingStudent.rollNumber,
-        guardianName: editingStudent.guardianName,
-        guardianPhone: editingStudent.guardianPhone,
-      });
-      setEditingStudent(null);
+      setActionError(null);
+      try {
+        await updateStudent(editingStudent.id, {
+          name: editingStudent.name,
+          class: editingStudent.class,
+          rollNumber: editingStudent.rollNumber,
+          guardianName: editingStudent.guardianName,
+          guardianPhone: editingStudent.guardianPhone,
+        });
+        setEditingStudent(null);
+      } catch (error) {
+        setActionError(error instanceof Error ? error.message : 'Could not update the student.');
+      }
     }
   };
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!resetTarget || !resetPw) return;
+    setActionError(null);
     const res = await resetStudentPassword(resetTarget.id, resetPw);
     if (res.success) {
       setResetDone(true);
       setResetPw('');
       setTimeout(() => { setResetDone(false); setResetTarget(null); }, 2000);
     } else {
-      alert(res.error ?? 'Failed to reset password.');
+      setActionError(res.error ?? 'Failed to reset password.');
     }
   };
 
@@ -253,6 +265,12 @@ export default function TeacherStudents() {
 
       {/* Table card */}
       <div className="glass-card rounded-3xl p-6">
+        {actionError && (
+          <div className="mb-5 flex items-start gap-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 p-3 rounded-xl">
+            <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+            <span>{actionError}</span>
+          </div>
+        )}
         <div className="flex flex-col md:flex-row gap-4 mb-6">
           <div className="relative flex-1">
             <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />

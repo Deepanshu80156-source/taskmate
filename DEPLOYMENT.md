@@ -63,7 +63,7 @@ This single SQL file creates every table, policy, storage bucket, and function y
 
 1. In your Supabase project, go to **SQL Editor** (left sidebar).
 2. Click **New query**.
-3. Open the file `supabase/setup.sql` from this project and copy its entire contents.
+3. Open the file `supabase/taskmate_supabase_final.sql` from this project and copy its entire contents.
 4. Paste it into the SQL Editor.
 5. Click **Run** (or press `Ctrl + Enter`).
 
@@ -146,11 +146,11 @@ You forgot to add the environment variables in Vercel. Go to:
 Vercel → Your Project → Settings → Environment Variables → Add both variables → Redeploy.
 
 ### Student can't log in after registration
-The auto-confirm trigger in `setup.sql` handles this automatically.
+The auto-confirm and teacher-profile triggers in `supabase/taskmate_supabase_final.sql` handle this automatically.
 If it still fails, go to **Supabase → Authentication → Settings** and turn off **"Enable email confirmations"**.
 
 ### "Failed to reset password" error
-This means the `reset_student_password` SQL function wasn't created. Re-run the `supabase/setup.sql` file in the Supabase SQL Editor.
+This means the `reset_student_password` SQL function wasn't created. Re-run `supabase/taskmate_supabase_final.sql` in the Supabase SQL Editor.
 
 ### File uploads (notes/library) are failing
 Make sure the storage buckets were created. Go to **Supabase → Storage** and confirm you see `notes` and `library` buckets. If not, re-run the SQL setup.
@@ -165,7 +165,7 @@ npm run build
 This is a Supabase security error. It usually means:
 - A student is trying to write data they don't own (expected — it's a security feature working correctly).
 - OR a teacher is accessing data from another teacher (also expected).
-- If you see it for normal operations, check that you ran the full `setup.sql` including the RLS policy section.
+- If you see it for normal operations, check that you ran the full `supabase/taskmate_supabase_final.sql` including the RLS policy section.
 
 ---
 
@@ -173,7 +173,7 @@ This is a Supabase security error. It usually means:
 
 - **Never expose your `service_role` key** in the frontend. Only the `anon` key is safe to use in client-side code.
 - **Student passwords** are stored as secure bcrypt hashes in Supabase — the plain-text password is only shown once at registration time and is never stored anywhere.
-- **Deleting a student** from the Students page removes their profile data but leaves their Supabase Auth account. This is a known limitation of client-side Supabase. To fully delete a user's auth record, go to **Supabase → Authentication → Users** and delete them manually. (This can be automated later with a Supabase Edge Function.)
+- **Historical orphan Auth accounts:** If an old failed registration left an Auth user without a profile, remove that orphan only from **Supabase → Authentication → Users** after verifying it has no profile.
 
 ---
 
@@ -190,7 +190,7 @@ taskmate/
 │   ├── data/mockData.ts          ← TypeScript type definitions
 │   └── data/constants.ts         ← CLASS_LIST and shared constants
 ├── supabase/
-│   └── setup.sql                 ← Run this once in Supabase SQL Editor
+│   └── taskmate_supabase_final.sql ← Run this in Supabase SQL Editor
 ├── public/                       ← Icons, PWA manifest
 ├── .env.example                  ← Environment variable template
 ├── DEPLOYMENT.md                 ← This file

@@ -36,6 +36,7 @@ export default function TaskMateAvatar({
   const [isLoading, setIsLoading] = useState(false);
   const retryRef = useRef(false);
   const signedUrlCacheRef = useRef<Map<string, { url: string; expiresAt: number }>>(new Map());
+  const requestRef = useRef(0);
 
   const resolvedSize = typeof size === 'number' ? size : sizeMap[size];
   const dim = typeof size === 'number' ? '' : `w-${resolvedSize} h-${resolvedSize}`;
@@ -49,6 +50,9 @@ export default function TaskMateAvatar({
 
   useEffect(() => {
     let cancelled = false;
+    const requestId = ++requestRef.current;
+    retryRef.current = false;
+    setResolvedPhotoUrl(null);
 
     const fetchSignedUrl = async () => {
       if (!avatarPath) {
@@ -82,12 +86,18 @@ export default function TaskMateAvatar({
           url: data.signedUrl,
           expiresAt: Date.now() + 3_500_000,
         });
-        setResolvedPhotoUrl(data.signedUrl);
+        if (requestId === requestRef.current) {
+          setResolvedPhotoUrl(data.signedUrl);
+        }
       } else {
-        setResolvedPhotoUrl(null);
+        if (requestId === requestRef.current) {
+          setResolvedPhotoUrl(null);
+        }
       }
-      setIsLoading(false);
-      retryRef.current = false;
+      if (requestId === requestRef.current) {
+        setIsLoading(false);
+        retryRef.current = false;
+      }
     };
 
     void fetchSignedUrl();

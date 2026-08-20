@@ -1045,7 +1045,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
     }
 
-    const { error: rpcError } = await supabase.rpc('create_student_profile', {
+    const profilePayload = {
       p_student_id: authData.user.id,
       p_name: safeName,
       p_username: normalizedUsername,
@@ -1053,14 +1053,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       p_roll_number: normalizedRoll || null,
       p_guardian_name: guardianName || null,
       p_guardian_phone: guardianPhone || null,
-    });
+    };
+
+    // The Auth account and profile RPC are intentionally separate because the
+    // browser must not receive a service-role key. A brief network interruption
+    // after signUp used to surface a fatal-looking error even when the RPC
+    // could safely finish on retry. The RPC is idempotent for this teacher and
+    // student ID, so retry transient failures without creating another account.
+    let rpcError: unknown = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const response = await supabase.rpc('create_student_profile', profilePayload);
+      rpcError = response.error;
+      if (!rpcError) break;
+      if (attempt === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 450));
+      }
+    }
 
     if (rpcError) {
       return {
         success: false,
         error: describeSupabaseError(
           rpcError,
-          'Student account creation did not complete. Run the final Supabase SQL migration and retry.',
+          'Student profile could not be saved. Please check the Supabase migration and try again.',
         ),
       };
     }

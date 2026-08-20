@@ -60,6 +60,7 @@ Run the SQL files in this order from Supabase Dashboard → SQL Editor:
 1. Open `supabase/cleanup_legacy_taskmate_rls_policies.sql`, paste it into a new SQL query, and click **Run**.
 2. Open `supabase/taskmate_supabase_final.sql`, paste it into a new SQL query, and click **Run**.
 3. Open `supabase/teacher_approval_workflow.sql`, paste it into a new SQL query, and click **Run**.
+4. Open `supabase/taskmate_security_hardening.sql`, paste it into a new SQL query, and click **Run**.
 
 Do not run old TaskMate SQL files after these files.
 
