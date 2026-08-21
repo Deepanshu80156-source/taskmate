@@ -116,6 +116,9 @@ export function normalizeAvatarStoragePath(value?: string | null): string | null
 
   const trimmed = value.trim();
   if (!trimmed) return null;
+  if (isAvatarDataUrl(trimmed) || /^avatars\/data:/i.test(trimmed)) {
+    return null;
+  }
 
   if (/^https?:\/\//i.test(trimmed)) {
     try {
@@ -145,15 +148,50 @@ export function normalizeAvatarStoragePath(value?: string | null): string | null
     }
   }
 
-  const withoutPrefix = trimmed
+  const storagePath = trimmed
     .replace(/^\/+/, '')
-    .replace(/^avatars\//i, '')
     .split('?')[0]
     .replace(/^\/+/, '');
 
-  if (!withoutPrefix) return null;
+  if (!storagePath) return null;
 
-  return withoutPrefix;
+  return storagePath;
+}
+
+export function isAvatarDataUrl(value?: string | null): boolean {
+  return Boolean(value && /^data:image\//i.test(value.trim()));
+}
+
+export function normalizeAvatarDisplaySource(value?: string | null): string | null {
+  if (!value) return null;
+
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  if (/^avatars\/data:/i.test(trimmed)) {
+    return trimmed.slice('avatars/'.length);
+  }
+
+  if (isAvatarDataUrl(trimmed)) return trimmed;
+
+  if (/^https?:\/\//i.test(trimmed) && !normalizeAvatarStoragePath(trimmed)) {
+    return trimmed;
+  }
+
+  return null;
+}
+
+export function getAvatarStoragePathCandidates(value?: string | null): string[] {
+  const normalized = normalizeAvatarStoragePath(value);
+  if (!normalized) return [];
+
+  const withoutAvatarsPrefix = normalized.replace(/^avatars\//i, '');
+  const alternatePath = /^avatars\//i.test(normalized)
+    ? withoutAvatarsPrefix
+    : `avatars/${withoutAvatarsPrefix}`;
+  return Array.from(
+    new Set([normalized, alternatePath]),
+  );
 }
 
 export function formatBytes(bytes: number): string {

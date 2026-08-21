@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { normalizeAvatarStoragePath } from '@/lib/fileUpload';
+import {
+  getAvatarStoragePathCandidates,
+  normalizeAvatarDisplaySource,
+  normalizeAvatarStoragePath,
+} from '@/lib/fileUpload';
 
 interface TaskMateAvatarProps {
   name: string;
@@ -20,11 +24,6 @@ function getAvatarPath(value?: string): string | null {
   return normalizeAvatarStoragePath(value);
 }
 
-function isLikelyExternalImage(value?: string): boolean {
-  if (!value) return false;
-  return /^https?:\/\//i.test(value.trim());
-}
-
 export default function TaskMateAvatar({
   name,
   photoUrl,
@@ -41,11 +40,12 @@ export default function TaskMateAvatar({
   const resolvedSize = typeof size === 'number' ? size : sizeMap[size];
   const dim = typeof size === 'number' ? '' : `w-${resolvedSize} h-${resolvedSize}`;
   const avatarPath = useMemo(() => getAvatarPath(photoUrl), [photoUrl]);
+  const avatarPathCandidates = useMemo(
+    () => getAvatarStoragePathCandidates(photoUrl),
+    [photoUrl],
+  );
   const directExternalUrl = useMemo(() => {
-    if (!photoUrl) return null;
-    const trimmed = photoUrl.trim();
-    if (!isLikelyExternalImage(trimmed)) return null;
-    return normalizeAvatarStoragePath(trimmed) ? null : trimmed;
+    return normalizeAvatarDisplaySource(photoUrl);
   }, [photoUrl]);
 
   useEffect(() => {
@@ -75,19 +75,28 @@ export default function TaskMateAvatar({
       }
 
       setIsLoading(true);
-      const { data, error } = await supabase.storage
-        .from('avatars')
-        .createSignedUrl(avatarPath, 3600);
+      let signedUrl: string | null = null;
+      let signedPath: string | null = null;
+      for (const candidate of avatarPathCandidates) {
+        const { data, error } = await supabase.storage
+          .from('avatars')
+          .createSignedUrl(candidate, 3600);
+        if (!error && data?.signedUrl) {
+          signedUrl = data.signedUrl;
+          signedPath = candidate;
+          break;
+        }
+      }
 
       if (cancelled) return;
 
-      if (!error && data?.signedUrl) {
-        signedUrlCacheRef.current.set(avatarPath, {
-          url: data.signedUrl,
+      if (signedUrl && signedPath) {
+        signedUrlCacheRef.current.set(signedPath, {
+          url: signedUrl,
           expiresAt: Date.now() + 3_500_000,
         });
         if (requestId === requestRef.current) {
-          setResolvedPhotoUrl(data.signedUrl);
+          setResolvedPhotoUrl(signedUrl);
         }
       } else {
         if (requestId === requestRef.current) {
@@ -105,7 +114,7 @@ export default function TaskMateAvatar({
     return () => {
       cancelled = true;
     };
-  }, [avatarPath, directExternalUrl]);
+  }, [avatarPath, avatarPathCandidates, directExternalUrl]);
 
   const handleImageError = async () => {
     if (!avatarPath) {
@@ -119,22 +128,23 @@ export default function TaskMateAvatar({
     }
 
     retryRef.current = true;
-    const cached = signedUrlCacheRef.current.get(avatarPath);
-    if (cached) {
-      signedUrlCacheRef.current.delete(avatarPath);
+    for (const candidate of avatarPathCandidates) {
+      signedUrlCacheRef.current.delete(candidate);
     }
 
-    const { data, error } = await supabase.storage
-      .from('avatars')
-      .createSignedUrl(avatarPath, 3600);
+    for (const candidate of avatarPathCandidates) {
+      const { data, error } = await supabase.storage
+        .from('avatars')
+        .createSignedUrl(candidate, 3600);
 
-    if (!error && data?.signedUrl) {
-      signedUrlCacheRef.current.set(avatarPath, {
-        url: data.signedUrl,
-        expiresAt: Date.now() + 3_500_000,
-      });
-      setResolvedPhotoUrl(data.signedUrl);
-      return;
+      if (!error && data?.signedUrl) {
+        signedUrlCacheRef.current.set(candidate, {
+          url: data.signedUrl,
+          expiresAt: Date.now() + 3_500_000,
+        });
+        setResolvedPhotoUrl(data.signedUrl);
+        return;
+      }
     }
 
     setResolvedPhotoUrl(null);

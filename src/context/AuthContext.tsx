@@ -917,7 +917,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { success: false, error: validation.error };
     }
 
-    const oldPath = normalizeAvatarStoragePath(currentUser.photoUrl ?? teacherProfile?.photoUrl ?? null);
+    const oldPhotoValue = currentUser.photoUrl ?? teacherProfile?.photoUrl ?? null;
+    const oldPath = normalizeAvatarStoragePath(oldPhotoValue);
     const nextPath = `avatars/${buildStoragePath(`avatars/${authenticatedUserId}`, file)}`;
     const durablePath = nextPath;
 
